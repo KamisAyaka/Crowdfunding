@@ -11,6 +11,7 @@ contract ProposalGovernance is Ownable {
     struct Proposal {
         uint projectId;
         uint proposalId;
+        string description; // 提案描述
         uint amount; // 请求拨款金额
         uint voteDeadline; // 投票截止时间戳
         bool executed; // 是否已执行
@@ -28,12 +29,6 @@ contract ProposalGovernance is Ownable {
 
     // 每个项目的提案失败次数计数器
     mapping(uint => uint) public proposalFailureCount;
-
-    // 标记项目是否已经发放过初始25%资金
-    mapping(uint => bool) public initialFundsWithdrawn;
-
-    // 标记是否允许退款（三次提案失败后）
-    mapping(uint => bool) public refundAllowed;
 
     // Crowdfunding 主合约地址
     address public crowdfundingAddress;
@@ -65,17 +60,6 @@ contract ProposalGovernance is Ownable {
     event RefundEnabled(uint indexed projectId);
 
     /*//////////////////////////////////////////////////////////////
-                               MODIFIERS
-    //////////////////////////////////////////////////////////////*/
-    modifier onlyCrowdfundingOwner() {
-        require(
-            msg.sender == crowdfundingAddress,
-            "Caller is not the crowdfunding owner"
-        );
-        _;
-    }
-
-    /*//////////////////////////////////////////////////////////////
                              MAIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
@@ -89,8 +73,16 @@ contract ProposalGovernance is Ownable {
     function createProposal(
         uint _projectId,
         uint _amount,
-        uint _voteDurationDays
-    ) external onlyCrowdfundingOwner {
+        uint _voteDurationDays,
+        string memory _description
+    ) external {
+        require(
+            projectProposals[_projectId].length == 0 ||
+                projectProposals[_projectId][
+                    projectProposals[_projectId].length - 1
+                ].executed,
+            "Previous proposal not executed"
+        );
         require(
             _voteDurationDays > 0 && _voteDurationDays <= 7,
             "Vote duration must be 1-7 days"
@@ -105,14 +97,19 @@ contract ProposalGovernance is Ownable {
             ,
             ,
             uint currentAmount,
-            bool completed,
+            ,
+            ,
+            ,
             bool isSuccessful
         ) = ICrowdfunding(crowdfundingAddress).projects(_projectId);
-
+        require(
+            msg.sender == creator,
+            "Only project creator can create proposal"
+        );
         require(isSuccessful, "Project is not successful");
         require(
-            !initialFundsWithdrawn[_projectId],
-            "Initial funds already withdrawn"
+            currentAmount >= _amount,
+            "Requested amount exceeds available funds"
         );
 
         uint deadline = block.timestamp + (_voteDurationDays * 1 days); // 1 day = 86400 seconds
@@ -120,6 +117,7 @@ contract ProposalGovernance is Ownable {
         Proposal storage newProposal = projectProposals[_projectId].push();
         newProposal.projectId = _projectId;
         newProposal.proposalId = projectProposals[_projectId].length - 1;
+        newProposal.description = _description;
         newProposal.amount = _amount;
         newProposal.voteDeadline = deadline;
         newProposal.executed = false;
@@ -133,7 +131,7 @@ contract ProposalGovernance is Ownable {
     }
 
     /**
-     * @dev 投票接口
+     * @dev 投票
      */
     function voteOnProposal(
         uint _projectId,
@@ -146,11 +144,6 @@ contract ProposalGovernance is Ownable {
             "Voting period has ended"
         );
         require(!proposal.hasVoted[msg.sender], "Already voted");
-
-        // 获取当前剩余资金用于判断投票权重
-        (, , , , , uint currentAmount, , , , , ) = ICrowdfunding(
-            crowdfundingAddress
-        ).getProjectInfo(_projectId);
 
         uint donationAmount = ICrowdfunding(crowdfundingAddress).donorAmounts(
             msg.sender,
@@ -180,43 +173,32 @@ contract ProposalGovernance is Ownable {
      */
     function executeProposal(uint _projectId, uint _proposalId) external {
         Proposal storage proposal = projectProposals[_projectId][_proposalId];
+        (, , , , , , , uint totalAmount, , , ) = ICrowdfunding(
+            crowdfundingAddress
+        ).projects(_projectId);
+        uint halfAmount = (totalAmount * 50) / 100;
         require(
-            block.timestamp > proposal.voteDeadline,
+            block.timestamp > proposal.voteDeadline ||
+                proposal.yesVotesAmount > halfAmount ||
+                proposal.noVotesAmount > halfAmount,
             "Voting period not ended"
         );
         require(!proposal.executed, "Proposal already executed");
 
-        // 获取当前剩余资金用于判断投票权重
-        (, , , , , uint currentAmount, , , , , ) = ICrowdfunding(
-            crowdfundingAddress
-        ).getProjectInfo(_projectId);
-
-        require(
-            proposal.amount <= currentAmount,
-            "Requested amount exceeds available funds"
-        );
-
-        if (proposal.yesVotesAmount > (currentAmount * 50) / 100) {
+        if (proposal.yesVotesAmount > halfAmount) {
             // 成功
-            // 解构获取项目创建人
-            (, address payable creator, , , , , , , ) = ICrowdfunding(
-                crowdfundingAddress
-            ).projects(_projectId);
-
-            payable(creator).transfer(proposal.amount);
-            ICrowdfunding(crowdfundingAddress).updateCurrentAmount(
+            proposal.passed = true;
+            ICrowdfunding(crowdfundingAddress).increaseAllowence(
                 _projectId,
                 proposal.amount
             );
-
-            proposal.passed = true;
             proposalFailureCount[_projectId] = 0; // 重置失败计数
         } else {
             // 失败
             proposalFailureCount[_projectId] += 1;
 
             if (proposalFailureCount[_projectId] >= 3) {
-                refundAllowed[_projectId] = true;
+                ICrowdfunding(crowdfundingAddress).setProjectFailed(_projectId);
                 emit RefundEnabled(_projectId);
             }
         }
@@ -224,56 +206,5 @@ contract ProposalGovernance is Ownable {
         proposal.executed = true;
 
         emit ProposalExecuted(_projectId, _proposalId, proposal.passed);
-    }
-
-    /**
-     * @dev 允许捐赠者在提案失败三次后撤回资金
-     */
-    function refundAfterFailedProposals(uint _projectId) external {
-        require(refundAllowed[_projectId], "Refund not allowed yet");
-
-        uint amount = ICrowdfunding(crowdfundingAddress).donorAmounts(
-            msg.sender,
-            _projectId
-        );
-        require(amount > 0, "No balance to refund");
-
-        ICrowdfunding(crowdfundingAddress).updateDonorBalance(
-            _projectId,
-            msg.sender,
-            0
-        );
-
-        payable(msg.sender).transfer(amount);
-    }
-
-    /**
-     * @dev 提案成功后发放初始资金
-     */
-    function withdrawInitialFunds(
-        uint _projectId
-    ) external onlyCrowdfundingOwner {
-        require(
-            !initialFundsWithdrawn[_projectId],
-            "Initial funds already withdrawn"
-        );
-
-        (, , , , , uint currentAmount, , , , , ) = ICrowdfunding(
-            crowdfundingAddress
-        ).getProjectInfo(_projectId);
-        uint initialAmount = (currentAmount * 25) / 100;
-
-        // 获取项目创建人
-        (, address payable creator, , , , , , , ) = ICrowdfunding(
-            crowdfundingAddress
-        ).projects(_projectId);
-
-        payable(creator).transfer(initialAmount);
-        ICrowdfunding(crowdfundingAddress).updateCurrentAmount(
-            _projectId,
-            initialAmount
-        );
-
-        initialFundsWithdrawn[_projectId] = true;
     }
 }

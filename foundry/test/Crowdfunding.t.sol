@@ -72,6 +72,8 @@ contract CrowdfundingTest is Test {
             uint goal,
             uint deadline,
             uint currentAmount,
+            uint totalAmount,
+            uint allowence,
             bool completed,
             bool isSuccessful,
             uint remainingTime,
@@ -84,6 +86,8 @@ contract CrowdfundingTest is Test {
         assertEq(description, "Description");
         assertEq(goal, 1 ether);
         assertEq(currentAmount, 0);
+        assertEq(totalAmount, 0);
+        assertEq(allowence, 0);
         assertEq(completed, false);
         assertEq(isSuccessful, false);
         assertEq(numDonors, 0);
@@ -100,8 +104,21 @@ contract CrowdfundingTest is Test {
         assertTrue(success);
 
         // 检查当前筹款金额
-        (, , , , , , uint currentAmount, , , , uint numDonors) = crowdfunding
-            .getProjectInfo(0);
+        (
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            uint currentAmount,
+            ,
+            ,
+            ,
+            ,
+            ,
+            uint numDonors
+        ) = crowdfunding.getProjectInfo(0);
 
         assertEq(currentAmount, 0.5 ether);
         assertEq(numDonors, 1);
@@ -127,8 +144,21 @@ contract CrowdfundingTest is Test {
         assertTrue(success2);
 
         // 检查当前筹款金额
-        (, , , , , , uint currentAmount, , , , uint numDonors) = crowdfunding
-            .getProjectInfo(0);
+        (
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            uint currentAmount,
+            ,
+            ,
+            ,
+            ,
+            ,
+            uint numDonors
+        ) = crowdfunding.getProjectInfo(0);
 
         assertEq(currentAmount, 1.2 ether);
         assertEq(numDonors, 2);
@@ -156,6 +186,8 @@ contract CrowdfundingTest is Test {
             ,
             ,
             uint currentAmount,
+            ,
+            ,
             bool completed,
             bool isSuccessful,
             ,
@@ -172,8 +204,21 @@ contract CrowdfundingTest is Test {
         crowdfunding.completeProject(0);
 
         // 检查项目状态
-        (, , , , , , currentAmount, completed, isSuccessful, , ) = crowdfunding
-            .getProjectInfo(0);
+        (
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            currentAmount,
+            ,
+            ,
+            completed,
+            isSuccessful,
+            ,
+
+        ) = crowdfunding.getProjectInfo(0);
 
         assertEq(currentAmount, 1 ether);
         assertEq(completed, true);
@@ -182,7 +227,7 @@ contract CrowdfundingTest is Test {
         // 提取资金
         uint initialBalance = creator.balance;
         vm.prank(creator); // 使用creator调用提取资金函数
-        crowdfunding.withdrawFunds(0);
+        crowdfunding.withdrawFunds(0, (currentAmount * 25) / 100);
         assertTrue(creator.balance > initialBalance);
     }
 
@@ -209,6 +254,8 @@ contract CrowdfundingTest is Test {
             ,
             ,
             uint currentAmount,
+            ,
+            ,
             bool completed,
             bool isSuccessful,
             ,

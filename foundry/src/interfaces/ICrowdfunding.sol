@@ -3,33 +3,35 @@ pragma solidity ^0.8.0;
 
 interface ICrowdfunding {
     /*//////////////////////////////////////////////////////////////
-                                 TYPES
+                                 EVENTS
     //////////////////////////////////////////////////////////////*/
-    struct Project {
-        uint id;
-        address payable creator;
-        string name;
-        string description;
-        uint goal;
-        uint deadline;
-        uint currentAmount;
-        bool completed;
-        bool isSuccessful;
-    }
+    event ProjectCreated(
+        uint indexed id,
+        address indexed creator,
+        string name,
+        uint goal,
+        uint deadline
+    );
+
+    event DonationMade(
+        uint indexed projectId,
+        address indexed donor,
+        uint amount
+    );
+
+    event ProjectCompleted(uint indexed id, bool isSuccessful);
+    event FundsWithdrawn(uint indexed id, address indexed account, uint amount);
+    event NFTMinted(
+        uint indexed projectId,
+        address indexed recipient,
+        uint indexed tokenId,
+        uint rank,
+        uint donationAmount
+    );
 
     /*//////////////////////////////////////////////////////////////
-                             MAIN FUNCTIONS
+                            CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-    function donate(uint _projectId) external payable;
-
-    function completeProject(uint _projectId) external;
-
-    function withdrawFunds(uint _projectId) external;
-
-    function refund(uint _projectId) external;
-
-    function setNFTContractAddress(address _nftAddress) external;
-
     function createProject(
         string memory _name,
         string memory _description,
@@ -37,11 +39,19 @@ interface ICrowdfunding {
         uint _deadline
     ) external;
 
+    function donate(uint _projectId) external payable;
+
+    function completeProject(uint _projectId) external;
+
+    function withdrawFunds(uint _projectId, uint amount) external;
+
+    function refund(uint _projectId) external;
+
     /*//////////////////////////////////////////////////////////////
-                                GETTERS
+                            STATE GETTERS
     //////////////////////////////////////////////////////////////*/
     function projects(
-        uint _projectId
+        uint
     )
         external
         view
@@ -53,14 +63,13 @@ interface ICrowdfunding {
             uint goal,
             uint deadline,
             uint currentAmount,
+            uint totalAmount,
+            uint allowence,
             bool completed,
             bool isSuccessful
         );
 
-    function donorAmounts(
-        address _donor,
-        uint _projectId
-    ) external view returns (uint);
+    function donorAmounts(address, uint) external view returns (uint);
 
     function getProjectInfo(
         uint _projectId
@@ -75,17 +84,17 @@ interface ICrowdfunding {
             uint goal,
             uint deadline,
             uint currentAmount,
+            uint totalAmount,
+            uint allowence,
             bool completed,
             bool isSuccessful,
             uint remainingTime,
             uint numDonors
         );
 
-    function updateCurrentAmount(uint _projectId, uint _amount) external;
+    function getProjectCount() external view returns (uint);
 
-    function updateDonorBalance(
-        uint _projectId,
-        address _donor,
-        uint _newBalance
-    ) external;
+    function increaseAllowence(uint _projectId, uint _amount) external;
+
+    function setProjectFailed(uint _projectId) external;
 }

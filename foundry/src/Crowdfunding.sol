@@ -16,7 +16,9 @@ contract Crowdfunding is Ownable {
         string description; // 项目描述
         uint goal; // 筹款目标金额
         uint deadline; // 截止日期（时间戳）
-        uint currentAmount; // 当前筹款总额
+        uint currentAmount; // 当前剩余筹款总额
+        uint totalAmount; // 项目总筹款金额
+        uint allowence; //提案者允许使用的金额
         bool completed; // 项目是否已结束
         bool isSuccessful; // 项目是否成功
     }
@@ -69,6 +71,9 @@ contract Crowdfunding is Ownable {
 
     // NFT合约地址
     address public nftContractAddress;
+
+    // 提案者地址
+    address public proposalAddress;
 
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
@@ -144,6 +149,11 @@ contract Crowdfunding is Ownable {
         nftContractAddress = _nftAddress;
     }
 
+    function setProposalAddress(address _proposalAddress) external onlyOwner {
+        require(_proposalAddress != address(0), "Invalid address");
+        proposalAddress = _proposalAddress;
+    }
+
     // 创建新项目
     function createProject(
         string memory _name,
@@ -165,6 +175,8 @@ contract Crowdfunding is Ownable {
             goal: _goal,
             deadline: _deadline,
             currentAmount: 0,
+            totalAmount: 0,
+            allowence: 0,
             completed: false,
             isSuccessful: false
         });
@@ -194,6 +206,7 @@ contract Crowdfunding is Ownable {
 
         // 更新项目当前筹款金额
         project.currentAmount += msg.value;
+        project.totalAmount = project.currentAmount;
 
         // 记录捐赠者
         if (donorAmounts[msg.sender][_projectId] == 0) {
@@ -234,6 +247,8 @@ contract Crowdfunding is Ownable {
             // 铸造NFT给项目贡献者
             _mintNFTsForTopDonors(_projectId);
 
+            // 释放启动资金给项目发起人
+            project.allowence = (project.totalAmount * 25) / 100;
             // 触发项目完成事件（成功）
             emit ProjectCompleted(_projectId, true);
         } else {
@@ -245,7 +260,8 @@ contract Crowdfunding is Ownable {
 
     // 提取项目资金（仅限项目发起人）
     function withdrawFunds(
-        uint _projectId
+        uint _projectId,
+        uint amount
     )
         public
         projectExists(_projectId)
@@ -256,13 +272,15 @@ contract Crowdfunding is Ownable {
         Project storage project = projects[_projectId];
         // 检查项目是否成功
         require(project.isSuccessful, "Project was not successful");
-        // 检查是否还没有提取过资金
-        require(project.currentAmount > 0, "No funds to withdraw");
+        // 检查资金
+        require(
+            project.totalAmount - project.currentAmount + amount <=
+                project.allowence,
+            "No enough Allowence funds to withdraw"
+        );
 
-        // 获取筹集的总金额
-        uint amount = project.currentAmount;
-        // 更新项目金额为0
-        project.currentAmount = 0;
+        // 更新项目剩余的金额
+        project.currentAmount -= amount;
 
         // 转账给项目发起人
         (bool success, ) = project.creator.call{value: amount}("");
@@ -287,7 +305,8 @@ contract Crowdfunding is Ownable {
         require(!project.isSuccessful, "Project was successful, cannot refund");
 
         // 获取退款金额
-        uint amount = donorAmounts[msg.sender][_projectId];
+        uint amount = (donorAmounts[msg.sender][_projectId] /
+            project.totalAmount) * project.currentAmount;
         // 更新捐赠者余额为0
         donorAmounts[msg.sender][_projectId] = 0;
 
@@ -297,6 +316,21 @@ contract Crowdfunding is Ownable {
 
         // 触发提取资金事件
         emit FundsWithdrawn(_projectId, msg.sender, amount);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                EXTERNAL
+    //////////////////////////////////////////////////////////////*/
+    function increaseAllowence(uint _projectId, uint _amount) external {
+        require(msg.sender == proposalAddress, "Unauthorized");
+        projects[_projectId].allowence += _amount;
+    }
+
+    function setProjectFailed(uint _projectId) external {
+        require(msg.sender == proposalAddress, "Unauthorized");
+        Project storage project = projects[_projectId];
+        project.allowence = 0;
+        project.isSuccessful = false; // 强制标记项目为失败状态
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -440,6 +474,8 @@ contract Crowdfunding is Ownable {
             uint goal,
             uint deadline,
             uint currentAmount,
+            uint totalAmount,
+            uint allowence,
             bool completed,
             bool isSuccessful,
             uint remainingTime,
@@ -455,6 +491,8 @@ contract Crowdfunding is Ownable {
         goal = project.goal;
         deadline = project.deadline;
         currentAmount = project.currentAmount;
+        totalAmount = project.totalAmount;
+        allowence = project.allowence;
         completed = project.completed;
         isSuccessful = project.isSuccessful;
         remainingTime = project.deadline > block.timestamp
