@@ -2,8 +2,9 @@
 src = "src"
 out = "out"
 libs = ["lib"]
-
+via_ir = true
+optimizer = true         # 必须开启
+optimizer_runs = 1000000 # 设置更高的优化等级
 
 remappings = ["@openzeppelin/contracts=lib/openzeppelin-contracts/contracts"]
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
-via_ir = true

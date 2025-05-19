@@ -20,7 +20,6 @@ contract ProposalGovernanceTest is Test {
         // 部署合约
         vm.startPrank(owner);
         crowdfunding = new Crowdfunding();
-        crowdfunding.setNFTContractAddress(nftContract);
         nft = new CrowdfundingNFT();
         crowdfunding.setNFTContractAddress(address(nft)); // 设置NFT合约地址
         // 设置NFT合约的owner为众筹合约
