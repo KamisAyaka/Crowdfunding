@@ -99,7 +99,6 @@ contract CrowdfundingNFT is ERC721, Ownable {
         uint rank,
         uint donationAmount
     ) public onlyOwner returns (uint256) {
-        uint256 tokenCounter = s_tokenIdCounter;
         uint256 tokenId = s_tokenIdCounter;
 
         // Insecure randomness!!
@@ -107,7 +106,7 @@ contract CrowdfundingNFT is ERC721, Ownable {
             keccak256(
                 abi.encodePacked(
                     to,
-                    tokenCounter,
+                    tokenId,
                     projectId,
                     rank,
                     donationAmount,
@@ -128,8 +127,8 @@ contract CrowdfundingNFT is ERC721, Ownable {
             donationAmount: donationAmount,
             rank: rank
         });
-        s_tokenIdToImageUri[tokenCounter] = imageUri;
-        emit CreatedNFT(tokenCounter);
+        s_tokenIdToImageUri[tokenId] = imageUri;
+        emit CreatedNFT(tokenId);
         s_tokenIdCounter++;
         return tokenId;
     }

@@ -52,6 +52,7 @@ contract ProposalGovernanceTest is Test {
         _vote(0, 0, true, voter2);
 
         // 执行提案
+        vm.warp(block.timestamp + 2 days);
         vm.prank(creator);
         proposalGov.executeProposal(0, 0);
 
@@ -63,6 +64,7 @@ contract ProposalGovernanceTest is Test {
     // 测试三次失败提案触发退款
     function testThreeFailedProposals() public {
         _fundAndCompleteProject();
+        uint start = block.timestamp;
 
         // 连续创建三个失败提案
         for (uint i = 0; i < 3; i++) {
@@ -71,7 +73,9 @@ contract ProposalGovernanceTest is Test {
 
             _vote(0, i, false, voter1);
             _vote(0, i, false, voter2);
+            start += 2 days;
 
+            vm.warp(start);
             vm.prank(creator);
             proposalGov.executeProposal(0, i);
         }
@@ -79,25 +83,6 @@ contract ProposalGovernanceTest is Test {
         // 验证项目状态
         (, , , , , , , , , , bool isSuccessful) = crowdfunding.projects(0);
         assertFalse(isSuccessful);
-    }
-
-    // 测试提前结束投票
-    function testEarlyVoteEnd() public {
-        _fundAndCompleteProject();
-
-        vm.prank(creator);
-        proposalGov.createProposal(0, 5 ether, 7, "Long Proposal");
-
-        // 投票超过50%
-        _vote(0, 0, true, voter1);
-
-        // 立即执行提案
-        vm.prank(creator);
-        proposalGov.executeProposal(0, 0);
-
-        // 验证allowence增加
-        (, , , , , , , , uint allowence, , ) = crowdfunding.projects(0);
-        assertEq(allowence, 2.5 ether + 5 ether);
     }
 
     // 辅助函数：完成项目筹款

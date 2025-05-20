@@ -108,19 +108,6 @@ contract Crowdfunding is Ownable {
         _;
     }
 
-    // Modifier - 检查项目仍在进行中
-    modifier projectActive(uint _projectId) {
-        require(
-            !projects[_projectId].completed,
-            "Project has already completed"
-        );
-        require(
-            block.timestamp < projects[_projectId].deadline,
-            "Project has passed its deadline"
-        );
-        _;
-    }
-
     // Modifier - 检查调用者是项目发起人
     modifier onlyCreator(uint _projectId) {
         require(
@@ -197,16 +184,19 @@ contract Crowdfunding is Ownable {
     // 向项目捐赠资金
     function donate(
         uint _projectId
-    ) public payable projectExists(_projectId) projectActive(_projectId) {
+    ) public payable projectExists(_projectId) projectNotCompleted(_projectId) {
         // 检查捐赠金额是否大于0
         require(msg.value > 0, "Donation amount must be greater than 0");
+        require(
+            block.timestamp < projects[_projectId].deadline,
+            "Project has passed its deadline"
+        );
 
         // 获取项目
         Project storage project = projects[_projectId];
 
         // 更新项目当前筹款金额
         project.currentAmount += msg.value;
-        project.totalAmount = project.currentAmount;
 
         // 记录捐赠者
         if (donorAmounts[msg.sender][_projectId] == 0) {
@@ -239,6 +229,7 @@ contract Crowdfunding is Ownable {
 
         // 标记项目为已完成
         project.completed = true;
+        project.totalAmount = project.currentAmount;
 
         // 判断项目是否成功
         if (project.currentAmount >= project.goal) {

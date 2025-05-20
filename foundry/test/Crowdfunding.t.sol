@@ -70,7 +70,7 @@ contract CrowdfundingTest is Test {
             string memory name,
             string memory description,
             uint goal,
-            uint deadline,
+            ,
             uint currentAmount,
             uint totalAmount,
             uint allowence,

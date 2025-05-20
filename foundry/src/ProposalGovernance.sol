@@ -17,7 +17,6 @@ contract ProposalGovernance is Ownable {
         bool executed; // 是否已执行
         bool passed; // 是否通过
         uint yesVotesAmount; // 支持金额总量
-        uint noVotesAmount; // 反对金额总量
         mapping(address => bool) hasVoted; // 每个地址是否已投票
     }
 
@@ -96,9 +95,9 @@ contract ProposalGovernance is Ownable {
             ,
             ,
             ,
-            uint currentAmount,
             ,
-            ,
+            uint totalAmount,
+            uint allowence,
             ,
             bool isSuccessful
         ) = ICrowdfunding(crowdfundingAddress).projects(_projectId);
@@ -108,7 +107,7 @@ contract ProposalGovernance is Ownable {
         );
         require(isSuccessful, "Project is not successful");
         require(
-            currentAmount >= _amount,
+            totalAmount - allowence >= _amount,
             "Requested amount exceeds available funds"
         );
 
@@ -153,8 +152,6 @@ contract ProposalGovernance is Ownable {
 
         if (_support) {
             proposal.yesVotesAmount += donationAmount;
-        } else {
-            proposal.noVotesAmount += donationAmount;
         }
 
         proposal.hasVoted[msg.sender] = true;
@@ -173,19 +170,17 @@ contract ProposalGovernance is Ownable {
      */
     function executeProposal(uint _projectId, uint _proposalId) external {
         Proposal storage proposal = projectProposals[_projectId][_proposalId];
-        (, , , , , , , uint totalAmount, , , ) = ICrowdfunding(
-            crowdfundingAddress
-        ).projects(_projectId);
-        uint halfAmount = (totalAmount * 50) / 100;
         require(
-            block.timestamp > proposal.voteDeadline ||
-                proposal.yesVotesAmount > halfAmount ||
-                proposal.noVotesAmount > halfAmount,
+            block.timestamp > proposal.voteDeadline,
             "Voting period not ended"
         );
         require(!proposal.executed, "Proposal already executed");
 
-        if (proposal.yesVotesAmount > halfAmount) {
+        (, , , , , , , uint totalAmount, , , ) = ICrowdfunding(
+            crowdfundingAddress
+        ).projects(_projectId);
+
+        if (proposal.yesVotesAmount > (totalAmount * 50) / 100) {
             // 成功
             proposal.passed = true;
             ICrowdfunding(crowdfundingAddress).increaseAllowence(
