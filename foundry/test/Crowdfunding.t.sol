@@ -75,9 +75,7 @@ contract CrowdfundingTest is Test {
             uint totalAmount,
             uint allowence,
             bool completed,
-            bool isSuccessful,
-            uint remainingTime,
-            uint numDonors
+            bool isSuccessful
         ) = crowdfunding.getProjectInfo(0);
 
         assertEq(id, 0);
@@ -90,8 +88,6 @@ contract CrowdfundingTest is Test {
         assertEq(allowence, 0);
         assertEq(completed, false);
         assertEq(isSuccessful, false);
-        assertEq(numDonors, 0);
-        assertTrue(remainingTime > 0);
     }
 
     // 测试资金捐赠功能
@@ -104,24 +100,11 @@ contract CrowdfundingTest is Test {
         assertTrue(success);
 
         // 检查当前筹款金额
-        (
-            ,
-            ,
-            ,
-            ,
-            ,
-            ,
-            uint currentAmount,
-            ,
-            ,
-            ,
-            ,
-            ,
-            uint numDonors
-        ) = crowdfunding.getProjectInfo(0);
+        (, , , , , , uint currentAmount, , , , ) = crowdfunding.getProjectInfo(
+            0
+        );
 
         assertEq(currentAmount, 0.5 ether);
-        assertEq(numDonors, 1);
 
         // 检查捐赠者余额
         assertEq(crowdfunding.donorAmounts(donors[1], 0), 0.5 ether);
@@ -144,24 +127,11 @@ contract CrowdfundingTest is Test {
         assertTrue(success2);
 
         // 检查当前筹款金额
-        (
-            ,
-            ,
-            ,
-            ,
-            ,
-            ,
-            uint currentAmount,
-            ,
-            ,
-            ,
-            ,
-            ,
-            uint numDonors
-        ) = crowdfunding.getProjectInfo(0);
+        (, , , , , , uint currentAmount, , , , ) = crowdfunding.getProjectInfo(
+            0
+        );
 
         assertEq(currentAmount, 1.2 ether);
-        assertEq(numDonors, 2);
 
         // 检查捐赠者余额
         assertEq(crowdfunding.donorAmounts(donors[1], 0), 0.5 ether);
@@ -189,9 +159,7 @@ contract CrowdfundingTest is Test {
             ,
             ,
             bool completed,
-            bool isSuccessful,
-            ,
-
+            bool isSuccessful
         ) = crowdfunding.getProjectInfo(0);
 
         assertEq(currentAmount, 1 ether);
@@ -200,25 +168,15 @@ contract CrowdfundingTest is Test {
 
         // 完成项目
         vm.warp(block.timestamp + 8 days); // 增加时间超过截止日期
+        address[] memory recipients = new address[](1);
+        recipients[0] = donors[1];
+        uint[] memory amount = new uint[](2);
+        amount[0] = 1 ether;
         vm.prank(creator);
-        crowdfunding.completeProject(0);
-
+        crowdfunding.completeProject(0, recipients, amount);
         // 检查项目状态
-        (
-            ,
-            ,
-            ,
-            ,
-            ,
-            ,
-            currentAmount,
-            ,
-            ,
-            completed,
-            isSuccessful,
-            ,
-
-        ) = crowdfunding.getProjectInfo(0);
+        (, , , , , , currentAmount, , , completed, isSuccessful) = crowdfunding
+            .getProjectInfo(0);
 
         assertEq(currentAmount, 1 ether);
         assertEq(completed, true);
@@ -242,8 +200,12 @@ contract CrowdfundingTest is Test {
 
         // 完成项目
         vm.warp(block.timestamp + 8 days); // 增加时间超过截止日期
+        address[] memory recipients = new address[](1);
+        recipients[0] = donors[1];
+        uint[] memory amount = new uint[](2);
+        amount[0] = 0.5 ether;
         vm.prank(creator);
-        crowdfunding.completeProject(0);
+        crowdfunding.completeProject(0, recipients, amount);
 
         // 检查项目状态
         (
@@ -257,9 +219,7 @@ contract CrowdfundingTest is Test {
             ,
             ,
             bool completed,
-            bool isSuccessful,
-            ,
-
+            bool isSuccessful
         ) = crowdfunding.getProjectInfo(0);
 
         assertEq(currentAmount, 0.5 ether);
@@ -271,103 +231,5 @@ contract CrowdfundingTest is Test {
         vm.prank(donors[1]);
         crowdfunding.refund(0);
         assertTrue(donors[1].balance > initialBalance);
-    }
-
-    // 测试成功铸造NFT给前五捐赠者
-    function testMintNFTsOnSuccess() public setupProject {
-        for (uint i = 0; i < 5; i++) {
-            vm.prank(donors[i]);
-            crowdfunding.donate{value: amounts[i]}(0);
-        }
-
-        // 完成项目
-        vm.warp(block.timestamp + 8 days);
-        vm.prank(creator);
-        crowdfunding.completeProject(0);
-
-        // 验证NFT铸造
-        for (uint i = 0; i < 5; i++) {
-            uint tokenId = i;
-            (, uint projectId, uint rank, uint donation) = nft.getNFTInfo(
-                tokenId
-            );
-
-            assertEq(projectId, 0);
-            assertEq(rank, i + 1);
-            assertEq(donation, amounts[i]);
-
-            // 验证元数据
-            string memory uri = nft.tokenURI(tokenId);
-            assertTrue(bytes(uri).length > 0);
-        }
-    }
-
-    // 测试相同捐赠金额的排名
-    function testEqualDonationRanking() public setupProject {
-        // 三个捐赠相同金额
-        address[3] memory donor = [address(0xA), address(0xB), address(0xC)];
-        for (uint i = 0; i < 3; i++) {
-            vm.deal(donor[i], 1 ether);
-            vm.prank(donor[i]);
-            crowdfunding.donate{value: 1 ether}(0);
-        }
-
-        // 完成项目
-        vm.warp(block.timestamp + 8 days);
-        vm.prank(creator);
-        crowdfunding.completeProject(0);
-
-        // 验证排名（后捐赠者覆盖前捐赠者）
-
-        (, , uint rank, ) = nft.getNFTInfo(0);
-        assertEq(rank, 1);
-
-        (, , uint rank2, ) = nft.getNFTInfo(1);
-        assertEq(rank2, 2);
-
-        (, , uint rank3, ) = nft.getNFTInfo(2);
-        assertEq(rank3, 3);
-        assertEq(nft.getTokenIdCounter(), 3);
-    }
-
-    //测试大于5个捐赠者的情况
-    function testMoreThan5Donors() public setupProject {
-        for (uint i = 0; i < 6; i++) {
-            vm.prank(donors[i]);
-            crowdfunding.donate{value: amounts[i]}(0);
-        }
-
-        // 完成项目
-        vm.warp(block.timestamp + 8 days);
-        vm.prank(creator);
-        crowdfunding.completeProject(0);
-
-        // 验证只铸造5个NFT
-        assertEq(nft.getTokenIdCounter(), 5);
-        uint64[6] memory amountsranks = [
-            3 ether,
-            2.3 ether,
-            2 ether,
-            1.5 ether,
-            1 ether,
-            0.5 ether
-        ];
-        address[6] memory donorranks = [
-            address(0x1),
-            address(0x6),
-            address(0x2),
-            address(0x3),
-            address(0x4),
-            address(0x5)
-        ];
-
-        // 验证前5名NFT的排名和金额
-        for (uint i = 0; i < 5; i++) {
-            (address donor, , uint256 actualRank, uint256 actualAmount) = nft
-                .getNFTInfo(i);
-            assertEq(donor, donorranks[i]);
-            assertEq(actualRank, i + 1, "Rank mismatch");
-            assertEq(actualAmount, amountsranks[i], "Donation amount mismatch");
-        }
     }
 }

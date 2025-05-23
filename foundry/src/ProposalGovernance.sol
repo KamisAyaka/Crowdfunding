@@ -202,4 +202,31 @@ contract ProposalGovernance is Ownable {
 
         emit ProposalExecuted(_projectId, _proposalId, proposal.passed);
     }
+
+    function getProjectProposals(
+        uint _projectId
+    )
+        external
+        view
+        returns (
+            uint[] memory proposalIds,
+            uint[] memory amounts,
+            uint[] memory deadlines,
+            bool[] memory executedStatus
+        )
+    {
+        Proposal[] storage proposals = projectProposals[_projectId];
+
+        proposalIds = new uint[](proposals.length);
+        amounts = new uint[](proposals.length);
+        deadlines = new uint[](proposals.length);
+        executedStatus = new bool[](proposals.length);
+
+        for (uint i = 0; i < proposals.length; i++) {
+            proposalIds[i] = proposals[i].proposalId;
+            amounts[i] = proposals[i].amount;
+            deadlines[i] = proposals[i].voteDeadline;
+            executedStatus[i] = proposals[i].executed;
+        }
+    }
 }

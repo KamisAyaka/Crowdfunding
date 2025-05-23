@@ -96,10 +96,16 @@ contract ProposalGovernanceTest is Test {
         vm.prank(voter2);
         crowdfunding.donate{value: 2 ether}(0);
 
+        address[] memory recipients = new address[](2);
+        recipients[0] = voter1;
+        recipients[1] = voter2;
+        uint[] memory amounts = new uint[](2);
+        amounts[0] = 8 ether;
+        amounts[1] = 2 ether;
         // 结束项目
         vm.warp(block.timestamp + 2 days);
         vm.prank(creator);
-        crowdfunding.completeProject(0);
+        crowdfunding.completeProject(0, recipients, amounts);
     }
 
     // 辅助函数：模拟投票

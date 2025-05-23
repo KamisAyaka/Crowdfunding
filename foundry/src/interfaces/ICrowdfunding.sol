@@ -9,6 +9,7 @@ interface ICrowdfunding {
         uint indexed id,
         address indexed creator,
         string name,
+        string description,
         uint goal,
         uint deadline
     );
@@ -16,7 +17,8 @@ interface ICrowdfunding {
     event DonationMade(
         uint indexed projectId,
         address indexed donor,
-        uint amount
+        uint amount,
+        uint currentAmount
     );
 
     event ProjectCompleted(uint indexed id, bool isSuccessful);
@@ -41,7 +43,11 @@ interface ICrowdfunding {
 
     function donate(uint _projectId) external payable;
 
-    function completeProject(uint _projectId) external;
+    function completeProject(
+        uint _projectId,
+        address[] memory _recipients,
+        uint[] memory _amounts
+    ) external;
 
     function withdrawFunds(uint _projectId, uint amount) external;
 
@@ -87,9 +93,7 @@ interface ICrowdfunding {
             uint totalAmount,
             uint allowence,
             bool completed,
-            bool isSuccessful,
-            uint remainingTime,
-            uint numDonors
+            bool isSuccessful
         );
 
     function getProjectCount() external view returns (uint);

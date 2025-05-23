@@ -1,102 +1,130 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { useAccount, useReadContract, useChainId } from "wagmi";
-import {
-  chainsToContracts,
-  CrowdfundingAbi,
-  CrowdfundingNFTAbi,
-} from "@/constants";
-// 在顶部导入语句中添加 TabButton
 import * as Tabs from "@radix-ui/react-tabs";
 import Link from "next/link";
-export default function HomePage() {
-  // 分类项目
-  const [activeTab, setActiveTab] = useState<"live" | "proposals" | "nfts">(
-    "live"
-  );
-  // HomePage.tsx 核心逻辑补充
-  const { address } = useAccount();
-  const chainId = useChainId();
-  const [CrowdfundingAddress, setCrowdfundingAddress] = useState("");
-  const currentChainContracts = chainsToContracts[chainId];
-  if (!currentChainContracts) {
-    throw new Error(`Unsupported chainId: ${chainId}`);
+
+interface ProjectInfo {
+  id: number;
+  name: string;
+  description: string;
+  goal: bigint;
+  deadline: bigint;
+  completed: boolean;
+  isSuccessful: boolean;
+}
+
+const GET_RECENT_Project = `
+query GetProjectById {
+  allProjectCreateds {
+    nodes {
+      id
+      name
+      description
+      goal
+      deadline
+    }
   }
-  // 新增类型定义
-  type ProjectInfo = {
-    id: bigint;
-    creator: string;
-    targetAmount: bigint;
-    raisedAmount: bigint; // 对应合约中的currentAmount字段
-    deadline: bigint;
-    completed: boolean;
-    isSuccessful: boolean;
-  };
+  allProjectCompleteds {
+    nodes {
+      id
+      isSuccessful
+    }
+  }
+}
+`;
+const GRAPHQL_API_URL = process.env.NEXT_PUBLIC_GRAPHQL_API_URL;
+async function fetchProjectsFromGraphQL(): Promise<ProjectInfo[]> {
+  if (!GRAPHQL_API_URL) {
+    throw new Error("GraphQL API URL 未定义，请检查环境变量配置");
+  }
 
-  // 修改后的useQuery逻辑
-  const { data: projects = [] } = useQuery<ProjectInfo[]>({
-    queryKey: ["projects", chainId],
-    queryFn: async () => {
-      // 获取项目总数
-      const countResult = useReadContract({
-        abi: CrowdfundingAbi,
-        address: currentChainContracts.Crowdfunding as `0x${string}`,
-        functionName: "getProjectCount",
-      });
-      const count = Number(countResult.data || 0);
-
-      // 并行获取所有项目详情
-      const projectPromises = Array.from({ length: count }, (_, i) =>
-        useReadContract({
-          abi: CrowdfundingAbi,
-          address: currentChainContracts.Crowdfunding as `0x${string}`,
-          functionName: "getProjectInfo",
-          args: [BigInt(i)],
-        })
-      );
-
-      // 等待所有请求完成
-      const results = await Promise.all(projectPromises);
-      return results.map((res) => {
-        const data = res.data as [
-          bigint,
-          string,
-          bigint,
-          bigint,
-          bigint,
-          bigint,
-          string,
-          string,
-          string,
-          boolean,
-          boolean
-        ]; // 根据ABI定义元组类型
-
-        return {
-          id: data[0],
-          creator: data[1],
-          targetAmount: data[2],
-          raisedAmount: data[4],
-          deadline: data[5],
-          completed: data[9],
-          isSuccessful: data[10],
-        } as ProjectInfo;
-      });
+  const response = await fetch(GRAPHQL_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
     },
+    body: JSON.stringify({
+      query: GET_RECENT_Project,
+    }),
   });
 
-  // 更新过滤逻辑
-  const liveProjects = useMemo(
-    () => projects.filter((p) => !p.completed),
-    [projects]
+  const result = (await response.json()) as {
+    data: {
+      allProjectCreateds: {
+        nodes: {
+          id: string;
+          name: string;
+          description: string;
+          goal: string;
+          deadline: string;
+          completed: boolean;
+          isSuccessful: boolean;
+        }[];
+      };
+      allProjectCompleteds: {
+        // 新增该字段类型声明
+        nodes: {
+          id: string;
+          isSuccessful: boolean;
+        }[];
+      };
+    };
+  };
+
+  // 创建完成状态的映射表
+  const completionMap = new Map<
+    string,
+    { completed: boolean; isSuccessful: boolean }
+  >(
+    result.data.allProjectCompleteds.nodes.map((node) => [
+      node.id,
+      { completed: true, isSuccessful: node.isSuccessful },
+    ])
   );
 
-  const successfulProjects = useMemo(
-    () => projects.filter((p) => p.completed && p.isSuccessful),
-    [projects]
+  return result.data.allProjectCreateds.nodes.map((node) => {
+    const completion = completionMap.get(node.id) || {
+      completed: false,
+      isSuccessful: false,
+    };
+
+    return {
+      id: Number(node.id),
+      name: node.name || "未知项目",
+      description: node.description || "无描述",
+      goal: BigInt(node.goal || "0"),
+      deadline: BigInt(node.deadline || "0"),
+      ...completion, // 关键修改：注入完成状态
+    };
+  });
+}
+
+export default function HomePage() {
+  const queryClient = useQueryClient();
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["projects"],
+    queryFn: fetchProjectsFromGraphQL,
+    refetchOnMount: true,
+    staleTime: 5000,
+  });
+
+  const [activeTab, setActiveTab] = useState<"live" | "history" | "nfts">(
+    "live"
   );
+
+  const liveProjects = useMemo(
+    () => (data ?? []).filter((p) => !p.completed),
+    [data]
+  );
+
+  const historyProjects = useMemo(
+    () => (data ?? []).filter((p) => p.completed),
+    [data]
+  );
+
   return (
     <div className="container mx-auto px-4 py-8">
+      {/* 创建项目按钮 */}
       <div className="mb-8 flex w-full space-x-4">
         <Link
           href="/create-project"
@@ -105,52 +133,144 @@ export default function HomePage() {
           🚀 创建众筹项目
         </Link>
         <Link
-          href="/propose"
-          className="flex-1 rounded-lg bg-green-500 px-6 py-2 text-center text-white hover:bg-green-600 transition-colors"
+          href="/my-proposal"
+          className="flex-1 rounded-lg bg-blue-500 px-6 py-2 text-center text-white hover:bg-blue-600 transition-colors"
         >
-          📝 发起新提案
+          🚀 我参与的项目提案
         </Link>
       </div>
-      <Tabs.Root
-        value={activeTab}
-        onValueChange={(value) => setActiveTab(value as typeof activeTab)}
-        className="w-full mb-8"
-      >
-        <Tabs.List className="flex gap-4 border-b w-full">
-          <Tabs.Trigger
-            value="live"
-            className={`px-4 py-2 flex-1 text-center ${
-              activeTab === "live"
-                ? "border-b-2 border-blue-500 font-medium"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            🚀 进行中项目 ({liveProjects.length})
-          </Tabs.Trigger>
 
-          <Tabs.Trigger
-            value="proposals"
-            className={`px-4 py-2 flex-1 text-center ${
-              activeTab === "proposals"
-                ? "border-b-2 border-blue-500 font-medium"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            ✅ 成功项目提案 ({successfulProjects.length})
-          </Tabs.Trigger>
+      {/* 刷新按钮 */}
+      <div className="mb-4 text-right">
+        <button
+          onClick={() =>
+            queryClient.invalidateQueries({ queryKey: ["projects"] })
+          }
+          className="text-sm text-gray-600 hover:text-gray-900"
+        >
+          🔁 刷新数据
+        </button>
+      </div>
 
-          <Tabs.Trigger
-            value="nfts"
-            className={`px-4 py-2 flex-1 text-center ${
-              activeTab === "nfts"
-                ? "border-b-2 border-blue-500 font-medium"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
+      {/* 错误提示 */}
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
+          读取项目失败：{error instanceof Error ? error.message : "未知错误"}
+        </div>
+      )}
+
+      {/* 加载中提示 */}
+      {isLoading && (
+        <div className="text-center py-8 text-gray-500">
+          ⏳ 正在加载项目数据...
+        </div>
+      )}
+
+      {/* 标签页导航 */}
+      {!isLoading && (
+        <Tabs.Root
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as typeof activeTab)}
+          className="w-full mb-8"
+        >
+          <Tabs.List className="flex gap-4 border-b w-full">
+            <Tabs.Trigger
+              value="live"
+              className={`px-4 py-2 flex-1 text-center ${
+                activeTab === "live"
+                  ? "border-b-2 border-blue-500 font-medium"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              🚀 进行中项目 ({liveProjects.length})
+            </Tabs.Trigger>
+
+            <Tabs.Trigger
+              value="history"
+              className={`px-4 py-2 flex-1 text-center ${
+                activeTab === "history"
+                  ? "border-b-2 border-blue-500 font-medium"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              📜 历史项目 ({historyProjects.length})
+            </Tabs.Trigger>
+
+            <Tabs.Trigger
+              value="nfts"
+              className={`px-4 py-2 flex-1 text-center ${
+                activeTab === "nfts"
+                  ? "border-b-2 border-blue-500 font-medium"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              🎨 我收到的NFT
+            </Tabs.Trigger>
+          </Tabs.List>
+
+          {/* 各个标签页内容 */}
+          <Tabs.Content value="live" className="w-full mt-4">
+            <ProjectList projects={liveProjects} />
+          </Tabs.Content>
+
+          <Tabs.Content value="history" className="w-full mt-4">
+            <ProjectList projects={historyProjects} />
+          </Tabs.Content>
+
+          <Tabs.Content value="nfts" className="w-full mt-4">
+            <div className="text-center py-8 text-gray-500">
+              暂无 NFT 数据，敬请期待或前往相关页面查看。
+            </div>
+          </Tabs.Content>
+        </Tabs.Root>
+      )}
+    </div>
+  );
+}
+
+function ProjectList({ projects }: { projects: ProjectInfo[] }) {
+  if (projects.length === 0) {
+    return (
+      <div className="text-center py-8 text-gray-500">
+        暂无项目数据，快去创建一个吧！
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {projects.map((project) => {
+        return (
+          <div
+            key={project.id.toString()}
+            className="border rounded-lg p-4 bg-white shadow-md hover:shadow-lg transition-shadow"
           >
-            🎨 我收到的NFT
-          </Tabs.Trigger>
-        </Tabs.List>
-      </Tabs.Root>
+            <h3 className="text-lg font-semibold mb-2">{project.name}</h3>
+            <p className="text-sm line-clamp-2 mb-2">{project.description}</p>
+            <div className="space-y-1">
+              <p>目标：{Number(project.goal) / 1e18} ETH</p>
+              <span
+                className={
+                  project.completed
+                    ? project.isSuccessful
+                      ? "text-green-500"
+                      : "text-red-500"
+                    : "text-blue-500"
+                }
+              >
+                {project.completed
+                  ? project.isSuccessful
+                    ? "✅ 成功"
+                    : "❌ 失败"
+                  : "⏳ 进行中"}
+              </span>
+            </div>
+            <Link href={`/project/${project.id}`} className="text-blue-500">
+              查看详情 →
+            </Link>
+          </div>
+        );
+      })}
     </div>
   );
 }

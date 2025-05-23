@@ -27,15 +27,17 @@ contract Crowdfunding is Ownable {
         uint indexed id,
         address indexed creator,
         string name,
+        string description,
         uint goal,
         uint deadline
     );
 
     // 资金捐赠事件
     event DonationMade(
-        uint indexed projectId,
+        uint indexed id,
         address indexed donor,
-        uint amount
+        uint amount,
+        uint currentAmount
     );
 
     // 项目完成事件
@@ -46,7 +48,7 @@ contract Crowdfunding is Ownable {
 
     // 铸造NFT事件
     event NFTMinted(
-        uint indexed projectId,
+        uint indexed id,
         address indexed recipient,
         uint indexed tokenId,
         uint rank,
@@ -64,10 +66,6 @@ contract Crowdfunding is Ownable {
 
     // 记录项目ID到其对应捐赠者的映射
     mapping(uint => address[]) public projectDonors;
-
-    // 存储每个项目前5大捐赠者及其捐赠金额
-    mapping(uint => address[5]) public projectTopDonors;
-    mapping(uint => uint[5]) public projectDonationAmounts;
 
     // NFT合约地址
     address public nftContractAddress;
@@ -176,6 +174,7 @@ contract Crowdfunding is Ownable {
             newProject.id,
             newProject.creator,
             newProject.name,
+            newProject.description,
             newProject.goal,
             newProject.deadline
         );
@@ -207,25 +206,35 @@ contract Crowdfunding is Ownable {
         uint previousAmount = donorAmounts[msg.sender][_projectId];
         donorAmounts[msg.sender][_projectId] += msg.value;
 
-        // 维护top 5捐赠者列表
-        _updateTopDonors(_projectId, msg.sender, previousAmount + msg.value);
-
         // 触发捐赠事件
-        emit DonationMade(_projectId, msg.sender, msg.value);
+        emit DonationMade(
+            _projectId,
+            msg.sender,
+            previousAmount + msg.value,
+            project.currentAmount
+        );
     }
 
     // 结束项目
     function completeProject(
-        uint _projectId
+        uint _projectId,
+        address[] memory _recipients,
+        uint[] memory _amounts
     )
         public
         projectExists(_projectId)
         projectNotCompleted(_projectId)
         deadlineReached(_projectId)
-        onlyCreator(_projectId)
     {
         // 获取项目
         Project storage project = projects[_projectId];
+
+        if (project.currentAmount >= project.goal) {
+            require(
+                msg.sender == project.creator,
+                "Only creator can complete successful projects"
+            );
+        }
 
         // 标记项目为已完成
         project.completed = true;
@@ -236,7 +245,7 @@ contract Crowdfunding is Ownable {
             project.isSuccessful = true;
 
             // 铸造NFT给项目贡献者
-            _mintNFTsForTopDonors(_projectId);
+            _mintNFTsForTopDonors(_projectId, _recipients, _amounts);
 
             // 释放启动资金给项目发起人
             project.allowence = (project.totalAmount * 25) / 100;
@@ -327,87 +336,15 @@ contract Crowdfunding is Ownable {
     /*//////////////////////////////////////////////////////////////
                                 INTERNAL
     //////////////////////////////////////////////////////////////*/
-    // 更新top 5捐赠者列表
-    function _updateTopDonors(
-        uint _projectId,
-        address _donor,
-        uint _totalDonation
-    ) internal {
-        address[5] storage donors = projectTopDonors[_projectId];
-        uint[5] storage amounts = projectDonationAmounts[_projectId];
-
-        // 如果捐赠者已在top5中，更新金额并重新排序
-        for (uint i = 0; i < 5; i++) {
-            if (donors[i] == _donor) {
-                amounts[i] = _totalDonation;
-                // 执行插入排序更新位置
-                _insertSort(donors, amounts, i);
-                return;
-            }
-        }
-
-        // 新捐赠者插入排序逻辑
-        for (int i = 4; i >= 0; i--) {
-            uint index = uint(i);
-
-            // 找到第一个比当前金额大的位置
-            if (_totalDonation <= amounts[index]) {
-                // 插入到i+1位置并后移元素
-                for (uint j = 4; j > index + 1; j--) {
-                    donors[j] = donors[j - 1];
-                    amounts[j] = amounts[j - 1];
-                }
-                donors[index + 1] = _donor;
-                amounts[index + 1] = _totalDonation;
-                return;
-            }
-        }
-
-        // 如果比所有现有金额都大，插入首位
-        for (uint j = 4; j > 0; j--) {
-            donors[j] = donors[j - 1];
-            amounts[j] = amounts[j - 1];
-        }
-        donors[0] = _donor;
-        amounts[0] = _totalDonation;
-    }
-
-    // 辅助函数：当已存在捐赠者更新金额时重新排序
-    function _insertSort(
-        address[5] storage donors,
-        uint[5] storage amounts,
-        uint updatedIndex
-    ) private {
-        uint currentAmount = amounts[updatedIndex];
-        address currentDonor = donors[updatedIndex];
-
-        // 向左比较找到正确位置
-        for (int i = int(updatedIndex) - 1; i >= 0; i--) {
-            uint prevIndex = uint(i);
-            if (currentAmount <= amounts[prevIndex]) {
-                break;
-            }
-
-            // 交换位置
-            (donors[prevIndex], donors[prevIndex + 1]) = (
-                currentDonor,
-                donors[prevIndex]
-            );
-            (amounts[prevIndex], amounts[prevIndex + 1]) = (
-                currentAmount,
-                amounts[prevIndex]
-            );
-        }
-    }
 
     // 铸造NFT给前5个最大捐赠者
-    function _mintNFTsForTopDonors(uint _projectId) internal {
-        // 获取项目的top 5捐赠者
-        address[5] storage donors = projectTopDonors[_projectId];
-        uint[5] storage amounts = projectDonationAmounts[_projectId];
-
+    function _mintNFTsForTopDonors(
+        uint _projectId,
+        address[] memory donors,
+        uint[] memory amounts
+    ) internal {
         // 铸造NFT给前5个最大捐赠者
-        for (uint i = 0; i < 5; i++) {
+        for (uint i = 0; i < donors.length; i++) {
             // 如果捐赠者地址为零，跳过
             if (donors[i] == address(0)) {
                 break;
@@ -444,12 +381,6 @@ contract Crowdfunding is Ownable {
         return nftContractAddress;
     }
 
-    function getProjectTop5Donors(
-        uint _projectId
-    ) public view returns (address[5] memory) {
-        return projectTopDonors[_projectId];
-    }
-
     // 获取项目信息
     function getProjectInfo(
         uint _projectId
@@ -468,9 +399,7 @@ contract Crowdfunding is Ownable {
             uint totalAmount,
             uint allowence,
             bool completed,
-            bool isSuccessful,
-            uint remainingTime,
-            uint numDonors
+            bool isSuccessful
         )
     {
         Project storage project = projects[_projectId];
@@ -486,9 +415,5 @@ contract Crowdfunding is Ownable {
         allowence = project.allowence;
         completed = project.completed;
         isSuccessful = project.isSuccessful;
-        remainingTime = project.deadline > block.timestamp
-            ? project.deadline - block.timestamp
-            : 0;
-        numDonors = projectDonors[_projectId].length;
     }
 }
