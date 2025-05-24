@@ -305,8 +305,8 @@ contract Crowdfunding is Ownable {
         require(!project.isSuccessful, "Project was successful, cannot refund");
 
         // 获取退款金额
-        uint amount = (donorAmounts[msg.sender][_projectId] /
-            project.totalAmount) * project.currentAmount;
+        uint amount = ((donorAmounts[msg.sender][_projectId] *
+            project.currentAmount) / project.totalAmount);
         // 更新捐赠者余额为0
         donorAmounts[msg.sender][_projectId] = 0;
 
@@ -337,13 +337,12 @@ contract Crowdfunding is Ownable {
                                 INTERNAL
     //////////////////////////////////////////////////////////////*/
 
-    // 铸造NFT给前5个最大捐赠者
+    // 铸造NFT给捐赠者
     function _mintNFTsForTopDonors(
         uint _projectId,
         address[] memory donors,
         uint[] memory amounts
     ) internal {
-        // 铸造NFT给前5个最大捐赠者
         for (uint i = 0; i < donors.length; i++) {
             // 如果捐赠者地址为零，跳过
             if (donors[i] == address(0)) {

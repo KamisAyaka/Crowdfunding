@@ -27,28 +27,28 @@ export interface ProjectInfo {
   allowance: bigint;
   completed: boolean;
   isSuccessful: boolean;
+  totalWithdrawn: bigint;
 }
 
 const GRAPHQL_API_URL = process.env.NEXT_PUBLIC_GRAPHQL_API_URL;
-
+const formatETH = (wei: bigint) => {
+  return (Number(wei) / 1e18).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  });
+};
 export default function ProjectDetailPage() {
   const params = useParams();
   const projectId = params.id as string;
   const { address } = useAccount();
   const chainId = useChainId();
   const currentChainContracts = chainsToContracts[chainId];
-  const [expandedDonations, setExpandedDonations] = useState<Set<number>>(
-    new Set()
-  );
-  const [showDonations, setShowDonations] = useState(false);
-  const toggleDonation = (index: number) => {
-    const newSet = new Set(expandedDonations);
-    newSet.has(index) ? newSet.delete(index) : newSet.add(index);
-    setExpandedDonations(newSet);
-  };
+
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // 捐赠相关状态
   const [donations, setDonations] = useState<
     Array<{
       donor: string;
@@ -56,8 +56,16 @@ export default function ProjectDetailPage() {
       amount: string;
     }>
   >([]);
-  // 捐赠相关状态
   const [donationAmount, setDonationAmount] = useState("");
+  const [showDonations, setShowDonations] = useState(false);
+  const [expandedDonations, setExpandedDonations] = useState<Set<number>>(
+    new Set()
+  );
+  const toggleDonation = (index: number) => {
+    const newSet = new Set(expandedDonations);
+    newSet.has(index) ? newSet.delete(index) : newSet.add(index);
+    setExpandedDonations(newSet);
+  };
   const {
     data: hash,
     writeContract,
@@ -82,6 +90,18 @@ export default function ProjectDetailPage() {
       hash: completeHash, // 需要从 writeCompleteContract 获取 hash
     });
 
+  // 取款状态
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [isWithdrawLoading, setIsWithdrawLoading] = useState(false);
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
+  const [operationHash, setOperationHash] = useState<`0x${string}`>();
+
+  const { isLoading: isWithdrawConfirming, isSuccess: isWithdrawConfirmed } =
+    useWaitForTransactionReceipt({
+      hash: operationHash, // 来自提款操作的哈希
+    });
+
+  const { writeContractAsync } = useWriteContract();
   const handleDonate = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -144,6 +164,96 @@ export default function ProjectDetailPage() {
       );
     }
   };
+  const handleFundsOperation = async (
+    operationType: "withdraw" | "refund",
+    amount?: string
+  ) => {
+    if (!address) {
+      toast.error("请先连接钱包");
+      return;
+    }
+
+    try {
+      setIsWithdrawLoading(true);
+
+      const config = {
+        address: currentChainContracts.Crowdfunding as `0x${string}`,
+        abi: CrowdfundingAbi,
+        functionName: operationType === "withdraw" ? "withdrawFunds" : "refund",
+        args:
+          operationType === "withdraw"
+            ? [BigInt(projectId), parseEther(amount || "0")]
+            : [BigInt(projectId)],
+      };
+
+      const txHash = await writeContractAsync(config);
+      toast.success(
+        `${operationType === "withdraw" ? "提取" : "退款"}请求已提交`
+      );
+      setOperationHash(txHash);
+    } catch (err) {
+      setWithdrawError(
+        `${operationType === "withdraw" ? "提取" : "退款"}失败: ${
+          err instanceof Error ? err.message : "未知错误"
+        }`
+      );
+    } finally {
+      setIsWithdrawLoading(false);
+    }
+  };
+
+  const refreshFunds = useCallback(async () => {
+    if (!GRAPHQL_API_URL) {
+      setError("GraphQL API 地址未配置");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(GRAPHQL_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: `
+            query GetWithdrawals($id: String!) {
+              allFundsWithdrawns(filter: { id: { equalTo: $id } }) {
+                nodes {
+                  amount
+                }
+              }
+            }
+          `,
+          variables: { id: projectId },
+        }),
+      });
+
+      const result = await response.json();
+      const withdrawals = result.data?.allFundsWithdrawns?.nodes || [];
+
+      // 计算最新金额（当前金额 - 总提取金额）
+      const totalWithdrawn = withdrawals.reduce(
+        (acc: bigint, w: any) => acc + BigInt(w.amount),
+        BigInt(0)
+      );
+
+      const newCurrentAmount = project
+        ? project.totalAmount - totalWithdrawn // 使用总金额减去总提款
+        : BigInt(0);
+
+      setProject((prev) =>
+        prev
+          ? {
+              ...prev,
+              currentAmount: newCurrentAmount,
+              totalWithdrawn: totalWithdrawn,
+            }
+          : null
+      );
+    } catch (err) {
+      toast.error("刷新资金数据失败");
+    }
+  }, [projectId]);
+
   const fetchProject = useCallback(async () => {
     // 检查 GRAPHQL_API_URL 是否存在
     if (!GRAPHQL_API_URL) {
@@ -213,7 +323,7 @@ export default function ProjectDetailPage() {
 
         setProject({
           id: node.id,
-          creator: node.creator,
+          creator: node.creator.toLowerCase(),
           name: node.name,
           description: node.description || "暂无描述",
           goal: node.goal,
@@ -221,9 +331,12 @@ export default function ProjectDetailPage() {
           txHash: node.txHash,
           currentAmount: currentAmount,
           totalAmount: currentAmount,
-          allowance: BigInt(0),
+          allowance: completedData?.isSuccessful
+            ? currentAmount / BigInt(4)
+            : BigInt(0),
           completed: completedData !== undefined,
           isSuccessful: completedData?.isSuccessful || false,
+          totalWithdrawn: BigInt(0),
         });
       } else {
         setError("找不到该项目");
@@ -235,16 +348,23 @@ export default function ProjectDetailPage() {
       setLoading(false);
     }
   }, [projectId]);
-  // 当交易确认后自动刷新数据
+
   useEffect(() => {
     if (!projectId) return;
 
     // 仅在以下情况执行数据获取：
     // 1. 项目ID变化时（用户切换项目）
     // 2. 完成状态变为 true 时（交易确认成功）
+    // 3. 捐赠确认成功时（isConfirmed 变化）
     fetchProject();
-  }, [projectId, isCompleted, fetchProject]); // 保证依赖项最小化
-
+  }, [projectId, isCompleted, isConfirmed]);
+  //  监听提款确认状态
+  useEffect(() => {
+    if (isWithdrawConfirmed) {
+      refreshFunds(); // 刷新资金数据
+      toast.success("提款已确认，数据已更新");
+    }
+  }, [isWithdrawConfirmed, refreshFunds]);
   if (loading) {
     return <div className="container mx-auto px-4 py-8">加载中...</div>;
   }
@@ -292,11 +412,11 @@ export default function ProjectDetailPage() {
             </p>
             <p>
               <span className="font-semibold text-gray-700">目标金额：</span>{" "}
-              {Number(project.goal) / 1e18} ETH
+              {formatETH(project.goal)} ETH
             </p>
             <p>
               <span className="font-semibold text-gray-700">当前金额：</span>{" "}
-              {project.currentAmount / BigInt(1e18)} ETH
+              {formatETH(project.currentAmount)} ETH
             </p>
             <div className="mt-4">
               <div className="flex justify-between mb-1">
@@ -490,8 +610,8 @@ export default function ProjectDetailPage() {
                           <div className="flex items-center space-x-4">
                             <span className="text-blue-600 font-semibold">
                               总捐赠金额：
-                              {(
-                                BigInt(donation.amount) / BigInt(1e18)
+                              {formatETH(
+                                BigInt(donation.amount)
                               ).toString()}{" "}
                               ETH
                             </span>
@@ -539,6 +659,55 @@ export default function ProjectDetailPage() {
                   </div>
                 )}
               </div>
+            )}
+          </div>
+          <div className="mt-8 bg-gray-50 p-6 rounded-lg">
+            <h2 className="text-xl font-bold mb-4">资金操作</h2>
+            {project.completed &&
+              project.isSuccessful &&
+              address?.toLowerCase() === project.creator.toLowerCase() && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={withdrawAmount}
+                      onChange={(e) => setWithdrawAmount(e.target.value)}
+                      placeholder={`可提取额度：${formatETH(
+                        project.allowance
+                      )} ETH`}
+                      className="flex-1 p-2 border rounded"
+                      disabled={isWithdrawLoading}
+                    />
+                    <button
+                      onClick={() =>
+                        handleFundsOperation("withdraw", withdrawAmount)
+                      }
+                      className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded disabled:opacity-50"
+                      disabled={
+                        !withdrawAmount ||
+                        isWithdrawLoading ||
+                        Number(withdrawAmount) <= 0
+                      }
+                    >
+                      {isWithdrawLoading ? "处理中..." : "提取资金"}
+                    </button>
+                  </div>
+                  {withdrawError && (
+                    <div className="text-red-500 text-sm">{withdrawError}</div>
+                  )}
+                </div>
+              )}
+
+            {project.completed && !project.isSuccessful && (
+              <button
+                onClick={() => handleFundsOperation("refund")}
+                className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-2 rounded w-full"
+                disabled={isWithdrawLoading}
+              >
+                {isWithdrawLoading ? "处理中..." : "申请退款"}
+              </button>
             )}
           </div>
         </div>
