@@ -13,7 +13,7 @@ export default function RootLayout(props: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
-        <link rel="icon" href="/nft-marketplace.png" sizes="any" />
+        <link rel="icon" href="/github_image.png" sizes="any" />
       </head>
       <body className="bg-zinc-50">
         <Providers>

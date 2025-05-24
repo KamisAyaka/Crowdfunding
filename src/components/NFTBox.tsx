@@ -1,24 +1,29 @@
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
-import { useReadContract } from "wagmi";
-import { CrowdfundingNFTAbi } from "../constants";
-import formatPrice from "../utils/formatPrice";
+import { useReadContract, useChainId } from "wagmi";
+import { CrowdfundingNFTAbi, chainsToContracts } from "../constants";
 
 // Type for the NFT data
 interface NFTBoxProps {
   tokenId: string;
-  contractAddress: string;
-  price: string;
+  projectId: string;
+  rank: number;
+  donationAmount: string;
 }
 
 export default function NFTBox({
   tokenId,
-  contractAddress,
-  price,
+  projectId,
+  rank,
+  donationAmount,
 }: NFTBoxProps) {
   const [nftImageUrl, setNftImageUrl] = useState<string | null>(null);
   const [isLoadingImage, setIsLoadingImage] = useState(false);
   const [imageError, setImageError] = useState(false);
+
+  const chainId = useChainId();
+  const currentChainContracts = chainsToContracts[chainId];
+  const contractAddress = currentChainContracts?.CrowdfundingNFT;
 
   // Fetch the tokenURI from the contract
   const {
@@ -41,18 +46,15 @@ export default function NFTBox({
       const fetchMetadata = async () => {
         setIsLoadingImage(true);
         try {
-          // Handle both HTTP and IPFS URIs
-          const uri = tokenURIData as string;
-          let url = uri;
+          // 直接解析base64数据
+          const [header, base64Data] = (tokenURIData as string).split(",");
 
-          const response = await fetch(url);
-          const metadata = await response.json();
+          const jsonString = atob(base64Data);
+          const metadata = JSON.parse(jsonString);
 
-          let imageUrl = metadata.image;
-
-          setNftImageUrl(imageUrl);
+          setNftImageUrl(metadata.image); // 直接使用image字段
         } catch (error) {
-          console.error("Error fetching metadata:", error);
+          console.error("元数据解析错误:", error);
           setImageError(true);
         } finally {
           setIsLoadingImage(false);
@@ -61,7 +63,7 @@ export default function NFTBox({
 
       fetchMetadata();
     }
-  }, [tokenURIData, isTokenURILoading, tokenId, contractAddress]);
+  }, [tokenURIData, isTokenURILoading]);
 
   return (
     <div className="border rounded-lg overflow-hidden shadow-md hover:shadow-lg transition-shadow">
@@ -73,13 +75,13 @@ export default function NFTBox({
         ) : imageError || tokenURIError || !nftImageUrl ? (
           // Fallback to local placeholder when there's an error
           <Image
-            src="/placeholder.png"
+            src="/github_image.png"
             alt={`NFT ${tokenId}`}
             fill
             className="object-cover"
           />
         ) : (
-          // Display the actual NFT image
+          //Display the actual NFT image
           <Image
             src={nftImageUrl}
             alt={`NFT ${tokenId}`}
@@ -92,13 +94,23 @@ export default function NFTBox({
       <div className="p-4">
         <div className="flex justify-between items-center mb-2">
           <h3 className="font-bold">Token #{tokenId}</h3>
-          <span className="text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-            {formatPrice(price)}
+          <span className="text-sm bg-gray-100 px-2 py-1 rounded">
+            排名 #{rank}
           </span>
         </div>
-        <p className="text-sm text-gray-600" title={contractAddress}>
-          Contract: {contractAddress}
-        </p>
+        <div className="space-y-1">
+          <p className="text-sm">项目ID: {projectId}</p>
+          <p className="text-sm">
+            捐赠金额: {Number(donationAmount) / 1e18} ETH
+          </p>
+          <p
+            className="text-sm text-gray-600 break-all"
+            title={contractAddress}
+          >
+            合约地址: {contractAddress.slice(0, 6)}...
+            {contractAddress.slice(-4)}
+          </p>
+        </div>
       </div>
     </div>
   );

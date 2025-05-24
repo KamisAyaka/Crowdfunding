@@ -1,7 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { useAccount } from "wagmi";
 import * as Tabs from "@radix-ui/react-tabs";
 import Link from "next/link";
+import NFTBox from "./NFTBox";
 
 interface ProjectInfo {
   id: number;
@@ -11,6 +13,13 @@ interface ProjectInfo {
   deadline: bigint;
   completed: boolean;
   isSuccessful: boolean;
+}
+
+interface NFTData {
+  tokenId: string;
+  projectId: string;
+  rank: number;
+  donationAmount: string;
 }
 
 const GET_RECENT_Project = `
@@ -32,6 +41,18 @@ query GetProjectById {
   }
 }
 `;
+
+const GET_MY_NFTS = `
+query GetMyNFTs($recipient: String!) {
+  allNftMinteds(filter: {recipient: {equalTo: $recipient}}) {
+    nodes {
+      tokenId
+      id
+      rank
+      donationAmount
+    }
+  }
+}`;
 const GRAPHQL_API_URL = process.env.NEXT_PUBLIC_GRAPHQL_API_URL;
 async function fetchProjectsFromGraphQL(): Promise<ProjectInfo[]> {
   if (!GRAPHQL_API_URL) {
@@ -98,7 +119,26 @@ async function fetchProjectsFromGraphQL(): Promise<ProjectInfo[]> {
     };
   });
 }
-
+async function fetchMyNFTs(recipient: string): Promise<NFTData[]> {
+  if (!GRAPHQL_API_URL) {
+    throw new Error("GraphQL API URL 未定义，请检查环境变量配置");
+  }
+  const response = await fetch(GRAPHQL_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: GET_MY_NFTS,
+      variables: { recipient: recipient.toLowerCase() },
+    }),
+  });
+  const result = await response.json();
+  return result.data.allNftMinteds.nodes.map((n: any) => ({
+    tokenId: n.tokenId,
+    projectId: n.id.toString(),
+    rank: Number(n.rank),
+    donationAmount: n.donationAmount,
+  }));
+}
 export default function HomePage() {
   const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
@@ -106,6 +146,13 @@ export default function HomePage() {
     queryFn: fetchProjectsFromGraphQL,
     refetchOnMount: true,
     staleTime: 5000,
+  });
+
+  const { address } = useAccount();
+  const { data: nfts } = useQuery({
+    queryKey: ["nfts", address],
+    queryFn: () => (address ? fetchMyNFTs(address) : []),
+    enabled: !!address,
   });
 
   const [activeTab, setActiveTab] = useState<"live" | "history" | "nfts">(
@@ -218,9 +265,23 @@ export default function HomePage() {
           </Tabs.Content>
 
           <Tabs.Content value="nfts" className="w-full mt-4">
-            <div className="text-center py-8 text-gray-500">
-              暂无 NFT 数据，敬请期待或前往相关页面查看。
-            </div>
+            {nfts?.length ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {nfts.map((nft) => (
+                  <NFTBox
+                    key={nft.tokenId}
+                    tokenId={nft.tokenId}
+                    projectId={nft.projectId}
+                    rank={nft.rank}
+                    donationAmount={nft.donationAmount}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                {address ? "暂无NFT数据" : "请先连接钱包查看NFT"}
+              </div>
+            )}
           </Tabs.Content>
         </Tabs.Root>
       )}

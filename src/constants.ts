@@ -659,7 +659,7 @@ export const CrowdfundingAbi = [
         ]
     }
 ]
-export const CrowdfundingNFTAbi = [
+export const CrowdfundingNFTAbi = 
     [
         {
             "type": "constructor",
@@ -1363,10 +1363,10 @@ export const CrowdfundingNFTAbi = [
                 }
             ]
         }
-    ],
 ]
 
-export const  ProposalGovernanceAbi =[
+
+export const  ProposalGovernanceAbi =
     [
         {
             "type": "constructor",
@@ -1719,5 +1719,4 @@ export const  ProposalGovernanceAbi =[
                 }
             ]
         }
-    ],
-]
+    ]
