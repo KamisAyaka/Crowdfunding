@@ -1366,8 +1366,7 @@ export const CrowdfundingNFTAbi =
 ]
 
 
-export const  ProposalGovernanceAbi =
-    [
+export const  ProposalGovernanceAbi = [
         {
             "type": "constructor",
             "inputs": [

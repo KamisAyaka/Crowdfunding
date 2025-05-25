@@ -25,3 +25,14 @@ contracts:
       - ProjectCompleted
       - FundsWithdrawn
       - NFTMinted
+
+  - name: ProposalGovernance
+    details:
+      - network: anvil
+        address: 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
+        start_block: "0"
+    abi: ./abis/ProposalGovernance.abi.json
+    include_events:
+      - ProposalCreated
+      - Voted
+      - ProposalExecuted

@@ -38,6 +38,7 @@ contract ProposalGovernance is Ownable {
     event ProposalCreated(
         uint indexed projectId,
         uint indexed proposalId,
+        string description,
         uint amount,
         uint voteDeadline
     );
@@ -124,6 +125,7 @@ contract ProposalGovernance is Ownable {
         emit ProposalCreated(
             _projectId,
             newProposal.proposalId,
+            _description,
             _amount,
             deadline
         );

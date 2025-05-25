@@ -13,6 +13,7 @@ import {
 import { chainsToContracts, CrowdfundingAbi } from "@/constants";
 import { parseEther } from "viem";
 import toast from "react-hot-toast";
+import Link from "next/link";
 
 export interface ProjectInfo {
   id: number;
@@ -547,6 +548,25 @@ export default function ProjectDetailPage() {
                 "结束项目"
               )}
             </button>
+            <button>
+              {address?.toLowerCase() === project.creator.toLowerCase() &&
+                project.isSuccessful && (
+                  <div className="mt-8 bg-gray-50 p-6 rounded-lg">
+                    <h2 className="text-xl font-bold mb-4">提案管理</h2>
+                    <Link
+                      href={`/project/${projectId}/proposals/create`}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded block text-center"
+                    >
+                      创建新提案
+                    </Link>
+                    {projectProposals?.length > 0 && (
+                      <p className="mt-2 text-sm text-gray-500">
+                        当前存在进行中提案时此按钮会自动禁用
+                      </p>
+                    )}
+                  </div>
+                )}
+            </button>
           </div>
           <div className="mt-4 text-center">
             {completeError && (
@@ -675,7 +695,7 @@ export default function ProjectDetailPage() {
                       value={withdrawAmount}
                       onChange={(e) => setWithdrawAmount(e.target.value)}
                       placeholder={`可提取额度：${formatETH(
-                        project.allowance
+                        project.allowance - project.totalWithdrawn
                       )} ETH`}
                       className="flex-1 p-2 border rounded"
                       disabled={isWithdrawLoading}

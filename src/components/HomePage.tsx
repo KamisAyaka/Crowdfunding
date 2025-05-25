@@ -180,10 +180,10 @@ export default function HomePage() {
           🚀 创建众筹项目
         </Link>
         <Link
-          href="/my-proposal"
+          href="/proposal"
           className="flex-1 rounded-lg bg-blue-500 px-6 py-2 text-center text-white hover:bg-blue-600 transition-colors"
         >
-          🚀 我参与的项目提案
+          🚀 查看项目提案
         </Link>
       </div>
 
