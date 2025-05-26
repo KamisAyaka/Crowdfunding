@@ -39,6 +39,11 @@ query GetProjectById {
       isSuccessful
     }
   }
+  allProjectFaileds { 
+    nodes {
+      id
+    }
+  }
 }
 `;
 
@@ -89,6 +94,11 @@ async function fetchProjectsFromGraphQL(): Promise<ProjectInfo[]> {
           isSuccessful: boolean;
         }[];
       };
+      allProjectFaileds: {
+        nodes: {
+          id: string;
+        }[];
+      };
     };
   };
 
@@ -102,12 +112,19 @@ async function fetchProjectsFromGraphQL(): Promise<ProjectInfo[]> {
       { completed: true, isSuccessful: node.isSuccessful },
     ])
   );
+  const failedMap = new Map<string, boolean>(
+    result.data.allProjectFaileds.nodes.map((node) => [node.id, true])
+  );
 
   return result.data.allProjectCreateds.nodes.map((node) => {
     const completion = completionMap.get(node.id) || {
       completed: false,
       isSuccessful: false,
     };
+
+    if (failedMap.has(node.id)) {
+      completion.isSuccessful = false;
+    }
 
     return {
       id: Number(node.id),
@@ -185,18 +202,6 @@ export default function HomePage() {
         >
           🚀 查看项目提案
         </Link>
-      </div>
-
-      {/* 刷新按钮 */}
-      <div className="mb-4 text-right">
-        <button
-          onClick={() =>
-            queryClient.invalidateQueries({ queryKey: ["projects"] })
-          }
-          className="text-sm text-gray-600 hover:text-gray-900"
-        >
-          🔁 刷新数据
-        </button>
       </div>
 
       {/* 错误提示 */}

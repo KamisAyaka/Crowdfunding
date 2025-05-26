@@ -448,6 +448,25 @@
     },
     {
         "type": "event",
+        "name": "AllowenceIncreased",
+        "inputs": [
+            {
+                "name": "id",
+                "type": "uint256",
+                "indexed": true,
+                "internalType": "uint256"
+            },
+            {
+                "name": "allowence",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
         "name": "DonationMade",
         "inputs": [
             {
@@ -615,6 +634,19 @@
                 "name": "deadline",
                 "type": "uint256",
                 "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "ProjectFailed",
+        "inputs": [
+            {
+                "name": "id",
+                "type": "uint256",
+                "indexed": true,
                 "internalType": "uint256"
             }
         ],

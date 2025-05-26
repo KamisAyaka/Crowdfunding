@@ -71,6 +71,40 @@
     },
     {
         "type": "function",
+        "name": "getProjectProposals",
+        "inputs": [
+            {
+                "name": "_projectId",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "outputs": [
+            {
+                "name": "proposalIds",
+                "type": "uint256[]",
+                "internalType": "uint256[]"
+            },
+            {
+                "name": "amounts",
+                "type": "uint256[]",
+                "internalType": "uint256[]"
+            },
+            {
+                "name": "deadlines",
+                "type": "uint256[]",
+                "internalType": "uint256[]"
+            },
+            {
+                "name": "executedStatus",
+                "type": "bool[]",
+                "internalType": "bool[]"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
         "name": "owner",
         "inputs": [],
         "outputs": [
@@ -239,6 +273,12 @@
                 "internalType": "uint256"
             },
             {
+                "name": "description",
+                "type": "string",
+                "indexed": false,
+                "internalType": "string"
+            },
+            {
                 "name": "amount",
                 "type": "uint256",
                 "indexed": false,
@@ -274,19 +314,6 @@
                 "type": "bool",
                 "indexed": false,
                 "internalType": "bool"
-            }
-        ],
-        "anonymous": false
-    },
-    {
-        "type": "event",
-        "name": "RefundEnabled",
-        "inputs": [
-            {
-                "name": "projectId",
-                "type": "uint256",
-                "indexed": true,
-                "internalType": "uint256"
             }
         ],
         "anonymous": false

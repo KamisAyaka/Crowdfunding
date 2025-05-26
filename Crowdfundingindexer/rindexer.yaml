@@ -24,6 +24,8 @@ contracts:
       - DonationMade
       - ProjectCompleted
       - FundsWithdrawn
+      - AllowenceIncreased
+      - ProjectFailed
       - NFTMinted
 
   - name: ProposalGovernance

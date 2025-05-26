@@ -1,3 +1,5 @@
+"use client";
+
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useAccount } from "wagmi";
@@ -24,6 +26,7 @@ query GetProposals($address: String!) {
     nodes {
       projectId
       proposalId
+      description
       amount
       voteDeadline
     }
@@ -50,9 +53,12 @@ async function fetchProposals(address?: string): Promise<{
   }
   const result = await fetch(GRAPHQL_API_URL, {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json", // 新增头
+    },
     body: JSON.stringify({
       query: GET_PROPOSALS,
-      variables: { address: address?.toLowerCase() },
+      variables: { address: address?.toLowerCase() || "" }, // 处理空值
     }),
   });
 
@@ -74,7 +80,7 @@ async function fetchProposals(address?: string): Promise<{
 
   // 获取用户捐赠过的项目ID
   const donatedProjectIds = new Set(
-    data.data.allDonationMades.nodes.map((n: any) => n.projectId)
+    data.data.allDonationMades.nodes.map((n: any) => n.id)
   );
 
   return {
@@ -121,13 +127,13 @@ export default function MyProposalPage() {
             value="created"
             className={tabStyle(activeTab === "created")}
           >
-            我创建的 ({createdProposals.length})
+            我创建的提案 ({createdProposals.length})
           </Tabs.Trigger>
           <Tabs.Trigger
             value="participated"
             className={tabStyle(activeTab === "participated")}
           >
-            我参与的 ({participatedProposals.length})
+            我参与的提案 ({participatedProposals.length})
           </Tabs.Trigger>
           <Tabs.Trigger value="all" className={tabStyle(activeTab === "all")}>
             全部提案 ({allProposals.length})
@@ -155,45 +161,99 @@ const tabStyle = (active: boolean) =>
       ? "border-b-2 border-blue-500 font-medium"
       : "text-gray-500 hover:text-gray-700"
   }`;
+const formatAmount = (amount: bigint) => {
+  return `${Number(amount / BigInt(1e18))} ETH`;
+};
 
 function ProposalList({ proposals }: { proposals: Proposal[] }) {
-  if (proposals.length === 0) {
-    return <div className="text-center py-8 text-gray-500">暂无提案</div>;
-  }
-
-  // 定义带类型注解的状态映射
-  const statusMap: Record<Proposal["status"], string> = {
-    pending: "⏳ 审核中",
+  // 在 ProposalList 组件内部添加状态映射
+  const statusMap = {
     approved: "✅ 已通过",
     rejected: "❌ 已拒绝",
+    pending: "⏳ 待处理",
+  } as const;
+  // 时间格式化函数
+  const formatTime = (timestamp: bigint) => {
+    const date = new Date(Number(timestamp) * 1000);
+    return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+  };
+
+  // 金额格式化函数
+  const formatETH = (wei: bigint) => {
+    return (Number(wei) / 1e18).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 4,
+    });
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {proposals.map((proposal) => (
         <div
-          key={proposal.proposalId}
-          className="border rounded-lg p-4 bg-white shadow-sm"
+          key={`${proposal.projectId}-${proposal.proposalId}`}
+          className="border rounded-lg p-4 bg-white shadow-sm hover:shadow-md transition-shadow"
         >
-          <h3 className="font-semibold mb-2">{proposal.description}</h3>{" "}
-          {/* 使用 description */}
-          <div className="flex justify-between items-center">
-            <span
-              className={`text-sm ${
-                proposal.status === "approved"
-                  ? "text-green-500"
-                  : proposal.status === "rejected"
-                  ? "text-red-500"
-                  : "text-gray-500"
-              }`}
-            >
-              {statusMap[proposal.status]} {/* 类型安全访问 */}
-            </span>
+          <h3 className="text-lg font-semibold mb-2">
+            {" "}
+            项目ID: {proposal.projectId}
+          </h3>
+          <h3 className="text-lg font-semibold mb-2">
+            {" "}
+            提案ID: {proposal.proposalId}
+          </h3>
+          <p className="text-sm line-clamp-2 mb-2">{proposal.description}</p>
+          <div className="space-y-2 mb-4">
+            <div className="flex justify-between">
+              <span className="text-gray-500">申请金额：</span>
+              <span className="font-mono">{formatETH(proposal.amount)}ETH</span>
+            </div>
+
+            <div className="flex justify-between">
+              <span className="text-gray-500">截止时间：</span>
+              <span className="text-blue-600">
+                {formatTime(proposal.voteDeadline)}
+              </span>
+            </div>
+          </div>
+
+          {/* 状态区块 */}
+          <div className="flex justify-between items-center border-t pt-3">
+            <div className="flex items-center space-x-2">
+              <span
+                className={`text-sm ${
+                  proposal.status === "approved"
+                    ? "text-green-500"
+                    : proposal.status === "rejected"
+                    ? "text-red-500"
+                    : "text-gray-500"
+                }`}
+              >
+                {statusMap[proposal.status]}
+              </span>
+              {proposal.executed && (
+                <span className="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">
+                  🚀 已执行
+                </span>
+              )}
+            </div>
             <Link
-              href={`/proposal/${proposal.proposalId}`} // 使用 proposalId
-              className="text-blue-500 text-sm hover:underline"
+              href={`/proposal/${proposal.proposalId}`}
+              className="text-blue-500 text-sm hover:underline flex items-center"
             >
               查看详情
+              <svg
+                className="w-4 h-4 ml-1"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M9 5l7 7-7 7"
+                />
+              </svg>
             </Link>
           </div>
         </div>

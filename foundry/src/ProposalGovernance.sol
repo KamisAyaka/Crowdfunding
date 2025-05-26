@@ -57,8 +57,6 @@ contract ProposalGovernance is Ownable {
         bool passed
     );
 
-    event RefundEnabled(uint indexed projectId);
-
     /*//////////////////////////////////////////////////////////////
                              MAIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -196,7 +194,6 @@ contract ProposalGovernance is Ownable {
 
             if (proposalFailureCount[_projectId] >= 3) {
                 ICrowdfunding(crowdfundingAddress).setProjectFailed(_projectId);
-                emit RefundEnabled(_projectId);
             }
         }
 

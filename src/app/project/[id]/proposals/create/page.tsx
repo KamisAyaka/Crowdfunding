@@ -18,7 +18,7 @@ export default function CreateProposalPage() {
   const [formData, setFormData] = useState({
     amount: "",
     description: "",
-    durationDays: 3, // 默认3天
+    durationDays: 1, // 默认3天
   });
 
   const { writeContract, isPending, error } = useWriteContract();

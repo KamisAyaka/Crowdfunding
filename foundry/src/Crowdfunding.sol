@@ -54,6 +54,10 @@ contract Crowdfunding is Ownable {
         uint rank,
         uint donationAmount
     );
+    // 提案者增加金额事件
+    event AllowenceIncreased(uint indexed id, uint allowence);
+
+    event ProjectFailed(uint indexed id);
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -324,6 +328,7 @@ contract Crowdfunding is Ownable {
     function increaseAllowence(uint _projectId, uint _amount) external {
         require(msg.sender == proposalAddress, "Unauthorized");
         projects[_projectId].allowence += _amount;
+        emit AllowenceIncreased(_projectId, projects[_projectId].allowence);
     }
 
     function setProjectFailed(uint _projectId) external {
@@ -331,6 +336,7 @@ contract Crowdfunding is Ownable {
         Project storage project = projects[_projectId];
         project.allowence = 0;
         project.isSuccessful = false; // 强制标记项目为失败状态
+        emit ProjectFailed(_projectId);
     }
 
     /*//////////////////////////////////////////////////////////////

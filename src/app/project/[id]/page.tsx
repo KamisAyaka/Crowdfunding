@@ -101,6 +101,15 @@ export default function ProjectDetailPage() {
     useWaitForTransactionReceipt({
       hash: operationHash, // 来自提款操作的哈希
     });
+  // 提案状态
+  const [proposals, setProposals] = useState<
+    Array<{
+      id: string;
+      deadline: number;
+      executed: boolean;
+    }>
+  >([]);
+  const [showProposals, setShowProposals] = useState(false);
 
   const { writeContractAsync } = useWriteContract();
   const handleDonate = async (e: React.FormEvent) => {
@@ -203,58 +212,6 @@ export default function ProjectDetailPage() {
     }
   };
 
-  const refreshFunds = useCallback(async () => {
-    if (!GRAPHQL_API_URL) {
-      setError("GraphQL API 地址未配置");
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const response = await fetch(GRAPHQL_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query: `
-            query GetWithdrawals($id: String!) {
-              allFundsWithdrawns(filter: { id: { equalTo: $id } }) {
-                nodes {
-                  amount
-                }
-              }
-            }
-          `,
-          variables: { id: projectId },
-        }),
-      });
-
-      const result = await response.json();
-      const withdrawals = result.data?.allFundsWithdrawns?.nodes || [];
-
-      // 计算最新金额（当前金额 - 总提取金额）
-      const totalWithdrawn = withdrawals.reduce(
-        (acc: bigint, w: any) => acc + BigInt(w.amount),
-        BigInt(0)
-      );
-
-      const newCurrentAmount = project
-        ? project.totalAmount - totalWithdrawn // 使用总金额减去总提款
-        : BigInt(0);
-
-      setProject((prev) =>
-        prev
-          ? {
-              ...prev,
-              currentAmount: newCurrentAmount,
-              totalWithdrawn: totalWithdrawn,
-            }
-          : null
-      );
-    } catch (err) {
-      toast.error("刷新资金数据失败");
-    }
-  }, [projectId]);
-
   const fetchProject = useCallback(async () => {
     // 检查 GRAPHQL_API_URL 是否存在
     if (!GRAPHQL_API_URL) {
@@ -265,7 +222,6 @@ export default function ProjectDetailPage() {
 
     try {
       const response = await fetch(GRAPHQL_API_URL, {
-        // 安全调用
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -297,6 +253,21 @@ export default function ProjectDetailPage() {
                     isSuccessful
                   }
                 }
+                allAllowenceIncreaseds(filter: { id: { equalTo: $id } }) {
+                  nodes {
+                    allowence
+                  }
+                }
+                allProjectFaileds(filter: { id: { equalTo: $id } }) {
+                  nodes {
+                    id
+                  }
+                }
+                allFundsWithdrawns(filter: { id: { equalTo: $id } }) {
+                  nodes {
+                    amount
+                  }
+                }
               }
           `,
           variables: {
@@ -321,6 +292,32 @@ export default function ProjectDetailPage() {
           : BigInt(0);
 
         const completedData = result.data.allProjectCompleteds?.nodes[0];
+        const isSuccessful = completedData?.isSuccessful || false;
+
+        // 处理allowence更新（取最新值）
+        const allowanceEvents =
+          result.data?.allAllowenceIncreaseds?.nodes || [];
+        var allowance = BigInt(0);
+        if (isSuccessful) {
+          // 初始额度为总金额的25%
+          allowance = (currentAmount * BigInt(25)) / BigInt(100);
+
+          // 如果有额度增加事件，使用最新值覆盖初始额度
+          if (allowanceEvents.length > 0) {
+            allowance = BigInt(
+              allowanceEvents[allowanceEvents.length - 1].allowence
+            );
+          }
+        }
+        // 处理项目失败状态（直接覆盖isSuccessful）
+        const hasFailed = result.data?.allProjectFaileds?.nodes?.length > 0;
+
+        // 新增提款数据计算
+        const withdrawals = result.data?.allFundsWithdrawns?.nodes || [];
+        const totalWithdrawn = withdrawals.reduce(
+          (acc: bigint, w: any) => acc + BigInt(w.amount),
+          BigInt(0)
+        );
 
         setProject({
           id: node.id,
@@ -330,14 +327,12 @@ export default function ProjectDetailPage() {
           goal: node.goal,
           deadline: node.deadline,
           txHash: node.txHash,
-          currentAmount: currentAmount,
+          currentAmount: currentAmount - totalWithdrawn,
           totalAmount: currentAmount,
-          allowance: completedData?.isSuccessful
-            ? currentAmount / BigInt(4)
-            : BigInt(0),
+          allowance: allowance,
           completed: completedData !== undefined,
-          isSuccessful: completedData?.isSuccessful || false,
-          totalWithdrawn: BigInt(0),
+          isSuccessful: hasFailed ? false : isSuccessful,
+          totalWithdrawn: totalWithdrawn,
         });
       } else {
         setError("找不到该项目");
@@ -350,6 +345,62 @@ export default function ProjectDetailPage() {
     }
   }, [projectId]);
 
+  const fetchProposal = useCallback(async () => {
+    if (!GRAPHQL_API_URL) {
+      setError("GraphQL API 地址未配置");
+      return;
+    }
+
+    try {
+      const GET_PROPOSALS = `
+      query GetProposals($projectId: String!) {
+        allProposalCreateds(filter: {projectId: {equalTo: $projectId}}, orderBy: [BLOCK_NUMBER_ASC]) {
+          nodes {
+            proposalId
+            voteDeadline
+          }
+        }
+        allProposalExecuteds(filter: {projectId: {equalTo: $projectId}}) {
+          nodes {
+            proposalId
+          }
+        }
+      }`;
+
+      const response = await fetch(GRAPHQL_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: GET_PROPOSALS,
+          variables: { projectId },
+        }),
+      });
+
+      const { data } = await response.json();
+
+      // 处理已执行提案
+      const executedProposals = new Set(
+        data?.allProposalExecuteds?.nodes?.map((n: any) =>
+          n.proposalId.toString()
+        ) || []
+      );
+
+      // 获取所有提案并标记执行状态
+      const proposals =
+        data?.allProposalCreateds?.nodes?.map((proposal: any) => ({
+          id: proposal.proposalId.toString(),
+          deadline: Number(proposal.voteDeadline) * 1000, // 转换为毫秒
+          executed: executedProposals.has(proposal.proposalId.toString()),
+        })) || [];
+
+      // 更新提案状态到组件（需要添加提案状态state）
+      setProposals(proposals);
+    } catch (err) {
+      toast.error("获取提案数据失败");
+      console.error("Fetch proposals error:", err);
+    }
+  }, [projectId]);
+
   useEffect(() => {
     if (!projectId) return;
 
@@ -358,14 +409,8 @@ export default function ProjectDetailPage() {
     // 2. 完成状态变为 true 时（交易确认成功）
     // 3. 捐赠确认成功时（isConfirmed 变化）
     fetchProject();
+    fetchProposal();
   }, [projectId, isCompleted, isConfirmed]);
-  //  监听提款确认状态
-  useEffect(() => {
-    if (isWithdrawConfirmed) {
-      refreshFunds(); // 刷新资金数据
-      toast.success("提款已确认，数据已更新");
-    }
-  }, [isWithdrawConfirmed, refreshFunds]);
   if (loading) {
     return <div className="container mx-auto px-4 py-8">加载中...</div>;
   }
@@ -382,6 +427,42 @@ export default function ProjectDetailPage() {
     <div className="min-h-screen bg-gray-50 px-2 py-4">
       <div className="container mx-auto">
         <div className="bg-white shadow-md rounded-lg p-6">
+          <div className="flex-1 flex justify-end">
+            <button>
+              {address?.toLowerCase() === project.creator.toLowerCase() &&
+                project.isSuccessful && (
+                  <div className="h-full relative">
+                    {proposals.length > 0 &&
+                      !proposals[proposals.length - 1].executed && (
+                        <div className="text-yellow-600 absolute -top-6 left-0 text-sm whitespace-nowrap">
+                          存在未执行提案(ID:{" "}
+                          {proposals[proposals.length - 1].id})
+                        </div>
+                      )}
+                    <Link
+                      href={`/project/${projectId}/proposals/create`}
+                      className={`h-10 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded block text-center ${
+                        proposals.length > 0 &&
+                        !proposals[proposals.length - 1].executed
+                          ? "opacity-50 cursor-not-allowed"
+                          : ""
+                      }`}
+                      onClick={(e) => {
+                        if (
+                          proposals.length > 0 &&
+                          !proposals[proposals.length - 1].executed
+                        ) {
+                          e.preventDefault();
+                          toast.error("请先执行当前提案");
+                        }
+                      }}
+                    >
+                      创建新提案
+                    </Link>
+                  </div>
+                )}
+            </button>
+          </div>
           <h1 className="text-3xl font-bold text-center text-blue-700 mb-6">
             {project.name}
           </h1>
@@ -418,6 +499,24 @@ export default function ProjectDetailPage() {
             <p>
               <span className="font-semibold text-gray-700">当前金额：</span>{" "}
               {formatETH(project.currentAmount)} ETH
+            </p>
+            <p>
+              <span className="font-semibold text-gray-700">总捐赠金额：</span>{" "}
+              {formatETH(project.totalAmount)} ETH
+            </p>
+            <p>
+              <span className="font-semibold text-gray-700">已提取金额：</span>{" "}
+              {formatETH(project.totalWithdrawn)} ETH
+            </p>
+            <p>
+              <span className="font-semibold text-gray-700">
+                最大允许提取金额：
+              </span>{" "}
+              {formatETH(project.allowance)} ETH
+            </p>
+            <p>
+              <span className="font-semibold text-gray-700">可用额度：</span>{" "}
+              {formatETH(project.allowance - project.totalWithdrawn)} ETH
             </p>
             <div className="mt-4">
               <div className="flex justify-between mb-1">
@@ -510,10 +609,10 @@ export default function ProjectDetailPage() {
               )}
             </form>
           </div>
-          <div className="mt-6 flex justify-center gap-4">
+          <div className="mt-6 flex justify-center gap-4 items-stretch">
             <button
               onClick={() => window.history.back()}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition-colors"
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition-colors h-full"
             >
               <ArrowLeftIcon className="w-4 h-4" />
               返回
@@ -522,7 +621,7 @@ export default function ProjectDetailPage() {
             <button
               onClick={handleCompleteProject}
               disabled={isCompleting || project.completed}
-              className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded transition-colors disabled:opacity-50 h-full"
             >
               {isCompleting ? (
                 <>
@@ -547,25 +646,6 @@ export default function ProjectDetailPage() {
               ) : (
                 "结束项目"
               )}
-            </button>
-            <button>
-              {address?.toLowerCase() === project.creator.toLowerCase() &&
-                project.isSuccessful && (
-                  <div className="mt-8 bg-gray-50 p-6 rounded-lg">
-                    <h2 className="text-xl font-bold mb-4">提案管理</h2>
-                    <Link
-                      href={`/project/${projectId}/proposals/create`}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded block text-center"
-                    >
-                      创建新提案
-                    </Link>
-                    {projectProposals?.length > 0 && (
-                      <p className="mt-2 text-sm text-gray-500">
-                        当前存在进行中提案时此按钮会自动禁用
-                      </p>
-                    )}
-                  </div>
-                )}
             </button>
           </div>
           <div className="mt-4 text-center">
@@ -728,6 +808,51 @@ export default function ProjectDetailPage() {
               >
                 {isWithdrawLoading ? "处理中..." : "申请退款"}
               </button>
+            )}
+          </div>
+          <div className="mt-8 bg-gray-50 p-6 rounded-lg">
+            <div
+              className="flex items-center justify-between cursor-pointer"
+              onClick={() => setShowProposals(!showProposals)} // 需要添加状态: const [showProposals, setShowProposals] = useState(false);
+            >
+              <h2 className="text-xl font-bold mb-4">提案记录</h2>
+              <ChevronRightIcon
+                className={`w-5 h-5 transition-transform ${
+                  showProposals ? "transform rotate-90" : ""
+                }`}
+              />
+            </div>
+            {showProposals && (
+              <div className="mt-4">
+                {proposals.length > 0 ? (
+                  <div className="space-y-2">
+                    {proposals.map((proposal, index) => (
+                      <div
+                        key={proposal.id}
+                        className="bg-white rounded-lg shadow-sm overflow-hidden transition-all duration-200 ease-in-out"
+                      >
+                        <div className="p-3 hover:bg-gray-50 flex justify-between items-center">
+                          <div className="flex items-center space-x-3">
+                            <span className="font-medium text-gray-600">
+                              提案ID: {proposal.id}
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-4">
+                            <span className="text-blue-600 font-semibold">
+                              截止时间:{" "}
+                              {new Date(proposal.deadline).toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-gray-500 text-center py-4">
+                    暂无提案记录
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
