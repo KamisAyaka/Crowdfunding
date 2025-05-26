@@ -14,6 +14,7 @@ import { chainsToContracts, CrowdfundingAbi } from "@/constants";
 import { parseEther } from "viem";
 import toast from "react-hot-toast";
 import Link from "next/link";
+import { formatETH } from "@/utils/formatters";
 
 export interface ProjectInfo {
   id: number;
@@ -32,12 +33,7 @@ export interface ProjectInfo {
 }
 
 const GRAPHQL_API_URL = process.env.NEXT_PUBLIC_GRAPHQL_API_URL;
-const formatETH = (wei: bigint) => {
-  return (Number(wei) / 1e18).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 4,
-  });
-};
+
 export default function ProjectDetailPage() {
   const params = useParams();
   const projectId = params.id as string;

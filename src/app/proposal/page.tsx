@@ -5,8 +5,9 @@ import { useMemo, useState } from "react";
 import { useAccount } from "wagmi";
 import * as Tabs from "@radix-ui/react-tabs";
 import Link from "next/link";
+import { formatETH, formatTime } from "@/utils/formatters";
 
-interface Proposal {
+export interface Proposal {
   projectId: number;
   proposalId: number;
   description: string;
@@ -172,19 +173,6 @@ function ProposalList({ proposals }: { proposals: Proposal[] }) {
     rejected: "❌ 已拒绝",
     pending: "⏳ 待处理",
   } as const;
-  // 时间格式化函数
-  const formatTime = (timestamp: bigint) => {
-    const date = new Date(Number(timestamp) * 1000);
-    return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
-  };
-
-  // 金额格式化函数
-  const formatETH = (wei: bigint) => {
-    return (Number(wei) / 1e18).toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 4,
-    });
-  };
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -211,7 +199,7 @@ function ProposalList({ proposals }: { proposals: Proposal[] }) {
             <div className="flex justify-between">
               <span className="text-gray-500">截止时间：</span>
               <span className="text-blue-600">
-                {formatTime(proposal.voteDeadline)}
+                {formatTime(Number(proposal.voteDeadline))}
               </span>
             </div>
           </div>
