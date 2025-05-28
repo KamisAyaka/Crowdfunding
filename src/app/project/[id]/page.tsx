@@ -103,6 +103,7 @@ export default function ProjectDetailPage() {
       id: string;
       deadline: number;
       executed: boolean;
+      passed: boolean;
     }>
   >([]);
   const [showProposals, setShowProposals] = useState(false);
@@ -359,6 +360,7 @@ export default function ProjectDetailPage() {
         allProposalExecuteds(filter: {projectId: {equalTo: $projectId}}) {
           nodes {
             proposalId
+            passed
           }
         }
       }`;
@@ -383,13 +385,21 @@ export default function ProjectDetailPage() {
 
       // 获取所有提案并标记执行状态
       const proposals =
-        data?.allProposalCreateds?.nodes?.map((proposal: any) => ({
-          id: proposal.proposalId.toString(),
-          deadline: Number(proposal.voteDeadline) * 1000, // 转换为毫秒
-          executed: executedProposals.has(proposal.proposalId.toString()),
-        })) || [];
+        data?.allProposalCreateds?.nodes?.map((proposal: any) => {
+          const executedProposal = data?.allProposalExecuteds?.nodes?.find(
+            (n: any) =>
+              n.proposalId.toString() === proposal.proposalId.toString()
+          );
 
-      // 更新提案状态到组件（需要添加提案状态state）
+          return {
+            id: proposal.proposalId.toString(),
+            deadline: Number(proposal.voteDeadline) * 1000,
+            executed: executedProposals.has(proposal.proposalId.toString()),
+            passed: executedProposal?.passed || false, // 从执行记录获取实际结果
+          };
+        }) || [];
+
+      // 更新提案状态到组件
       setProposals(proposals);
     } catch (err) {
       toast.error("获取提案数据失败");
@@ -510,10 +520,6 @@ export default function ProjectDetailPage() {
               </span>{" "}
               {formatETH(project.allowance)} ETH
             </p>
-            <p>
-              <span className="font-semibold text-gray-700">可用额度：</span>{" "}
-              {formatETH(project.allowance - project.totalWithdrawn)} ETH
-            </p>
             <div className="mt-4">
               <div className="flex justify-between mb-1">
                 <span className="text-sm font-medium text-blue-700">
@@ -521,7 +527,7 @@ export default function ProjectDetailPage() {
                 </span>
                 <span className="text-sm font-medium text-blue-700">
                   {(
-                    (Number(project.currentAmount) / Number(project.goal)) *
+                    (Number(project.totalAmount) / Number(project.goal)) *
                     100
                   ).toFixed(1)}
                   %
@@ -532,7 +538,7 @@ export default function ProjectDetailPage() {
                   className="h-2 bg-blue-600 rounded-full transition-all duration-300"
                   style={{
                     width: `${Math.min(
-                      (Number(project.currentAmount) / Number(project.goal)) *
+                      (Number(project.totalAmount) / Number(project.goal)) *
                         100,
                       100
                     )}%`,
@@ -822,13 +828,30 @@ export default function ProjectDetailPage() {
               <div className="mt-4">
                 {proposals.length > 0 ? (
                   <div className="space-y-2">
-                    {proposals.map((proposal, index) => (
-                      <div
+                    {proposals.map((proposal) => (
+                      <Link
                         key={proposal.id}
-                        className="bg-white rounded-lg shadow-sm overflow-hidden transition-all duration-200 ease-in-out"
+                        href={`/project/${projectId}/proposals/${proposal.id}`}
+                        className="bg-white rounded-lg shadow-sm overflow-hidden transition-all duration-200 ease-in-out hover:shadow-md"
                       >
-                        <div className="p-3 hover:bg-gray-50 flex justify-between items-center">
+                        <div className="p-3 flex justify-between items-center">
                           <div className="flex items-center space-x-3">
+                            {/* 新增状态徽章 */}
+                            <span
+                              className={`px-2 py-1 rounded-full text-sm ${
+                                proposal.executed
+                                  ? proposal.passed
+                                    ? "bg-green-100 text-green-800"
+                                    : "bg-red-100 text-red-800"
+                                  : "bg-gray-100 text-gray-600"
+                              }`}
+                            >
+                              {proposal.executed
+                                ? proposal.passed
+                                  ? "已通过"
+                                  : "未通过"
+                                : "未执行"}
+                            </span>
                             <span className="font-medium text-gray-600">
                               提案ID: {proposal.id}
                             </span>
@@ -838,9 +861,10 @@ export default function ProjectDetailPage() {
                               截止时间:{" "}
                               {new Date(proposal.deadline).toLocaleString()}
                             </span>
+                            <ChevronRightIcon className="w-5 h-5 text-gray-400" />
                           </div>
                         </div>
-                      </div>
+                      </Link>
                     ))}
                   </div>
                 ) : (

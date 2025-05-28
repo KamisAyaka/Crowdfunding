@@ -17,6 +17,7 @@ contract ProposalGovernance is Ownable {
         bool executed; // 是否已执行
         bool passed; // 是否通过
         uint yesVotesAmount; // 支持金额总量
+        uint noVotesAmount;
         mapping(address => bool) hasVoted; // 每个地址是否已投票
     }
 
@@ -152,6 +153,8 @@ contract ProposalGovernance is Ownable {
 
         if (_support) {
             proposal.yesVotesAmount += donationAmount;
+        } else {
+            proposal.noVotesAmount += donationAmount;
         }
 
         proposal.hasVoted[msg.sender] = true;
@@ -176,11 +179,11 @@ contract ProposalGovernance is Ownable {
         );
         require(!proposal.executed, "Proposal already executed");
 
-        (, , , , , , , uint totalAmount, , , ) = ICrowdfunding(
-            crowdfundingAddress
-        ).projects(_projectId);
+        uint totalVotes = proposal.yesVotesAmount + proposal.noVotesAmount;
 
-        if (proposal.yesVotesAmount > (totalAmount * 50) / 100) {
+        if (
+            totalVotes > 0 && (proposal.yesVotesAmount * 100) / totalVotes >= 60
+        ) {
             // 成功
             proposal.passed = true;
             ICrowdfunding(crowdfundingAddress).increaseAllowence(

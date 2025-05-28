@@ -9,42 +9,151 @@ import {
   useChainId,
 } from "wagmi";
 import { chainsToContracts, ProposalGovernanceAbi } from "@/constants";
-import { useQuery } from "@tanstack/react-query";
-import { Proposal } from "../page"; // 复用提案类型定义
 import { formatETH, formatTime } from "@/utils/formatters";
 import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+const GRAPHQL_API_URL = process.env.NEXT_PUBLIC_GRAPHQL_API_URL;
+
+interface Proposal {
+  projectId: number;
+  proposalId: number;
+  description: string;
+  amount: bigint;
+  voteDeadline: bigint;
+  executed: boolean;
+  passed: boolean;
+  yesVotesAmount: bigint;
+  noVotesAmount: bigint;
+}
+
+const GET_PROPOSAL_DETAIL = `
+query GetProposalDetail($projectId: String!, $proposalId: String!) {
+  allProposalCreateds(condition: { 
+    projectId: $projectId, 
+    proposalId: $proposalId 
+  }) {
+    nodes {
+      projectId
+      proposalId
+      description
+      amount
+      voteDeadline
+    }
+  }
+  allVoteds(condition: { 
+    projectId: $projectId, 
+    proposalId: $proposalId 
+  }) {
+    nodes {
+      voter
+      support
+      amount
+    }
+  }
+  allProposalExecuteds(condition: { 
+    projectId: $projectId, 
+    proposalId: $proposalId 
+  }) {
+    nodes {
+      passed
+    }
+  }
+}
+`;
+
+async function fetchProposalDetail(
+  projectId: string,
+  proposalId: string
+): Promise<Proposal> {
+  if (!GRAPHQL_API_URL) throw new Error("GraphQL API URL 未定义");
+
+  const response = await fetch(GRAPHQL_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: GET_PROPOSAL_DETAIL,
+      variables: { projectId, proposalId },
+    }),
+  });
+
+  const { data } = await response.json();
+  const proposal = data?.allProposalCreateds?.nodes?.[0];
+  if (!proposal) throw new Error("未找到对应提案");
+
+  // 计算投票金额
+  const votes = data?.allVoteds?.nodes || [];
+  const yesVotesAmount = votes
+    .filter((v: any) => v.support)
+    .reduce((acc: bigint, v: any) => acc + BigInt(v.amount), BigInt(0));
+
+  const noVotesAmount = votes
+    .filter((v: any) => !v.support)
+    .reduce((acc: bigint, v: any) => acc + BigInt(v.amount), BigInt(0));
+
+  const executedProposal = data?.allProposalExecuteds?.nodes?.[0];
+
+  return {
+    ...proposal,
+    yesVotesAmount,
+    noVotesAmount,
+    executed: !!executedProposal, // 存在执行记录即为已执行
+    passed: executedProposal?.passed ?? false, // 从事件中获取通过状态
+  };
+}
 
 export default function ProposalDetailPage() {
-  const { proposalId } = useParams();
+  const params = useParams() as { id: string; proposalId: string };
+  const { id: projectId, proposalId } = params;
   const { address } = useAccount();
   const chainId = useChainId();
   const currentChainContracts = chainsToContracts[chainId];
 
-  // 获取提案详情
-  const { data: proposal, isLoading } = useQuery<Proposal>({
-    queryKey: ["proposal", proposalId],
-    queryFn: async () => {
-      const response = await fetch("/api/proposals/" + proposalId);
-      if (!response.ok) throw new Error("提案加载失败");
-      return response.json();
-    },
-  });
+  const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // 投票交易处理
+  // 数据获取函数
+  const fetchData = useCallback(async () => {
+    try {
+      if (!address) return;
+
+      setIsLoading(true);
+      const data = await fetchProposalDetail(
+        projectId.toString(),
+        proposalId.toString()
+      );
+      setProposal(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "获取提案失败");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [address, projectId, proposalId]);
+
+  // 初始化加载和参数变化时刷新
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // 投票处理
   const {
     writeContract: voteWrite,
     isPending: isVoting,
     error: voteError,
+    data: voteHash,
   } = useWriteContract();
   const { isLoading: isVoteConfirming } = useWaitForTransactionReceipt({
     hash: voteHash,
   });
 
-  // 执行提案交易处理
+  // 执行提案处理
   const {
     writeContract: executeWrite,
     isPending: isExecuting,
     error: executeError,
+    data: executeHash,
   } = useWriteContract();
   const { isLoading: isExecuteConfirming } = useWaitForTransactionReceipt({
     hash: executeHash,
@@ -72,8 +181,18 @@ export default function ProposalDetailPage() {
     });
   };
 
+  // 投票统计计算
+  const totalVotes = useMemo(() => {
+    if (!proposal) return 0;
+    return Number(proposal.yesVotesAmount + proposal.noVotesAmount);
+  }, [proposal]);
+
   if (isLoading)
     return <div className="container mx-auto px-4 py-8">加载中...</div>;
+  if (error)
+    return (
+      <div className="container mx-auto px-4 py-8 text-red-500">{error}</div>
+    );
   if (!proposal)
     return (
       <div className="container mx-auto px-4 py-8 text-red-500">提案不存在</div>
@@ -91,7 +210,12 @@ export default function ProposalDetailPage() {
         </Link>
 
         {/* 提案基本信息 */}
-        <h1 className="text-2xl font-bold mb-4">{proposal.description}</h1>
+        <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+          <h3 className="text-lg font-semibold mb-2">提案详情</h3>
+          <p className="text-gray-600 whitespace-pre-wrap">
+            {proposal.description || "暂无详细描述"}
+          </p>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <InfoItem label="项目ID" value={proposal.projectId} />
           <InfoItem label="提案ID" value={proposal.proposalId} />
@@ -111,16 +235,22 @@ export default function ProposalDetailPage() {
             <h3 className="text-lg font-semibold">投票统计</h3>
             <span
               className={`badge ${
-                proposal.status === "approved"
-                  ? "bg-green-100 text-green-800"
-                  : "bg-red-100 text-red-800"
+                proposal.executed
+                  ? proposal.passed
+                    ? "bg-green-100"
+                    : "bg-red-100"
+                  : Date.now() < Number(proposal.voteDeadline) * 1000
+                  ? "bg-yellow-100"
+                  : "bg-blue-100"
               }`}
             >
-              {proposal.status === "approved"
-                ? "已通过"
-                : proposal.passed
-                ? "等待执行"
-                : "未通过"}
+              {proposal.executed
+                ? proposal.passed
+                  ? "已通过"
+                  : "未通过"
+                : Date.now() < Number(proposal.voteDeadline) * 1000
+                ? "投票中"
+                : "等待执行"}
             </span>
           </div>
           <div className="space-y-2">
@@ -128,10 +258,23 @@ export default function ProposalDetailPage() {
               label="支持率"
               value={(Number(proposal.yesVotesAmount) / 1e18).toFixed(2)}
               percentage={
-                (Number(proposal.yesVotesAmount) /
-                  Number(proposal.totalVotes)) *
-                100
+                totalVotes > 0
+                  ? (Number(proposal.yesVotesAmount) / totalVotes) * 100
+                  : 0
               }
+            />
+            <ProgressBar
+              label="反对率"
+              value={(Number(proposal.noVotesAmount) / 1e18).toFixed(2)}
+              percentage={
+                totalVotes > 0
+                  ? (Number(proposal.noVotesAmount) / totalVotes) * 100
+                  : 0
+              }
+            />
+            <InfoItem
+              label="总投票额"
+              value={`${formatETH(totalVotes.toString())} ETH`}
             />
           </div>
         </div>
@@ -140,7 +283,9 @@ export default function ProposalDetailPage() {
         <div className="border-t pt-4">
           {!proposal.executed && (
             <div className="flex flex-col md:flex-row gap-4">
-              {new Date() < proposal.voteDeadline * 1000 ? (
+              {/* 修改提案结束的判断时间用于测试 */}
+              {Date.now() + 86400 * 5000 <
+              Number(proposal.voteDeadline) * 1000 ? (
                 <>
                   <button
                     onClick={() => handleVote(true)}
@@ -166,19 +311,17 @@ export default function ProposalDetailPage() {
                   </button>
                 </>
               ) : (
-                address?.toLowerCase() === proposal.creator.toLowerCase() && (
-                  <button
-                    onClick={handleExecute}
-                    disabled={isExecuting || isExecuteConfirming}
-                    className="bg-blue-500 text-white px-6 py-2 rounded-lg w-full disabled:opacity-50"
-                  >
-                    {isExecuting
-                      ? "提交中..."
-                      : isExecuteConfirming
-                      ? "确认中..."
-                      : "执行提案"}
-                  </button>
-                )
+                <button
+                  onClick={handleExecute}
+                  disabled={isExecuting || isExecuteConfirming}
+                  className="bg-blue-500 text-white px-6 py-2 rounded-lg w-full disabled:opacity-50"
+                >
+                  {isExecuting
+                    ? "提交中..."
+                    : isExecuteConfirming
+                    ? "确认中..."
+                    : "执行提案"}
+                </button>
               )}
             </div>
           )}

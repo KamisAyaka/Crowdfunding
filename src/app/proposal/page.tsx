@@ -7,7 +7,7 @@ import * as Tabs from "@radix-ui/react-tabs";
 import Link from "next/link";
 import { formatETH, formatTime } from "@/utils/formatters";
 
-export interface Proposal {
+interface Proposal {
   projectId: number;
   proposalId: number;
   description: string;
@@ -15,7 +15,6 @@ export interface Proposal {
   voteDeadline: bigint;
   executed: boolean;
   passed: boolean;
-  yesVotesAmount: bigint;
   status: "pending" | "approved" | "rejected"; // 新增状态字段
 }
 
@@ -225,7 +224,7 @@ function ProposalList({ proposals }: { proposals: Proposal[] }) {
               )}
             </div>
             <Link
-              href={`/proposal/${proposal.proposalId}`}
+              href={`/project/${proposal.projectId}/proposals/${proposal.proposalId}`}
               className="text-blue-500 text-sm hover:underline flex items-center"
             >
               查看详情

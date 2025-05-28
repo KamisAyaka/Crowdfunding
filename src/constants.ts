@@ -1571,6 +1571,11 @@ export const  ProposalGovernanceAbi = [
                 "name": "yesVotesAmount",
                 "type": "uint256",
                 "internalType": "uint256"
+            },
+            {
+                "name": "noVotesAmount",
+                "type": "uint256",
+                "internalType": "uint256"
             }
         ],
         "stateMutability": "view"
