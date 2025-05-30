@@ -15,7 +15,7 @@ interface ICrowdfunding {
     );
 
     event DonationMade(
-        uint indexed projectId,
+        uint indexed id,
         address indexed donor,
         uint amount,
         uint currentAmount
@@ -24,12 +24,16 @@ interface ICrowdfunding {
     event ProjectCompleted(uint indexed id, bool isSuccessful);
     event FundsWithdrawn(uint indexed id, address indexed account, uint amount);
     event NFTMinted(
-        uint indexed projectId,
+        uint indexed id,
         address indexed recipient,
         uint indexed tokenId,
         uint rank,
         uint donationAmount
     );
+
+    event AllowenceIncreased(uint indexed id, uint allowence);
+
+    event ProjectFailed(uint indexed id);
 
     /*//////////////////////////////////////////////////////////////
                             CORE FUNCTIONS

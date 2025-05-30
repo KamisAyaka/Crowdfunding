@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useAccount } from "wagmi";
 import * as Tabs from "@radix-ui/react-tabs";
@@ -15,7 +15,6 @@ interface Proposal {
   voteDeadline: bigint;
   executed: boolean;
   passed: boolean;
-  status: "pending" | "approved" | "rejected"; // 新增状态字段
 }
 
 const GRAPHQL_API_URL = process.env.NEXT_PUBLIC_GRAPHQL_API_URL;
@@ -98,7 +97,7 @@ async function fetchProposals(address?: string): Promise<{
 
 export default function MyProposalPage() {
   const { address } = useAccount();
-  const { data, isLoading, error } = useQuery<{
+  const { data } = useQuery<{
     all: Proposal[];
     created: Proposal[];
     participated: Proposal[];
@@ -161,18 +160,8 @@ const tabStyle = (active: boolean) =>
       ? "border-b-2 border-blue-500 font-medium"
       : "text-gray-500 hover:text-gray-700"
   }`;
-const formatAmount = (amount: bigint) => {
-  return `${Number(amount / BigInt(1e18))} ETH`;
-};
 
 function ProposalList({ proposals }: { proposals: Proposal[] }) {
-  // 在 ProposalList 组件内部添加状态映射
-  const statusMap = {
-    approved: "✅ 已通过",
-    rejected: "❌ 已拒绝",
-    pending: "⏳ 待处理",
-  } as const;
-
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {proposals.map((proposal) => (
@@ -206,17 +195,6 @@ function ProposalList({ proposals }: { proposals: Proposal[] }) {
           {/* 状态区块 */}
           <div className="flex justify-between items-center border-t pt-3">
             <div className="flex items-center space-x-2">
-              <span
-                className={`text-sm ${
-                  proposal.status === "approved"
-                    ? "text-green-500"
-                    : proposal.status === "rejected"
-                    ? "text-red-500"
-                    : "text-gray-500"
-                }`}
-              >
-                {statusMap[proposal.status]}
-              </span>
               {proposal.executed && (
                 <span className="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">
                   🚀 已执行

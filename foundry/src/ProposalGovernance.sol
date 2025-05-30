@@ -17,7 +17,7 @@ contract ProposalGovernance is Ownable {
         bool executed; // 是否已执行
         bool passed; // 是否通过
         uint yesVotesAmount; // 支持金额总量
-        uint noVotesAmount;
+        uint noVotesAmount; // 反对金额总量
         mapping(address => bool) hasVoted; // 每个地址是否已投票
     }
 
@@ -67,7 +67,12 @@ contract ProposalGovernance is Ownable {
     }
 
     /**
-     * @dev 创建提案
+     * @dev 创建提案，只有项目发起人才能创建，且在同一时间段内只能创建一个提案
+     * 申请的金额不能超过项目剩余金额
+     * @param _projectId 项目ID
+     * @param _amount 请求拨款金额
+     * @param _voteDurationDays 投票持续时间（天）
+     * @param _description 提案描述
      */
     function createProposal(
         uint _projectId,
@@ -113,13 +118,23 @@ contract ProposalGovernance is Ownable {
 
         uint deadline = block.timestamp + (_voteDurationDays * 1 days); // 1 day = 86400 seconds
 
-        Proposal storage newProposal = projectProposals[_projectId].push();
+        // 创建新提案的正确方式
+        uint newProposalId = projectProposals[_projectId].length;
+        projectProposals[_projectId].push(); // 添加空结构体
+        Proposal storage newProposal = projectProposals[_projectId][
+            newProposalId
+        ];
+
+        // 初始化结构体字段
         newProposal.projectId = _projectId;
-        newProposal.proposalId = projectProposals[_projectId].length - 1;
+        newProposal.proposalId = newProposalId;
         newProposal.description = _description;
         newProposal.amount = _amount;
         newProposal.voteDeadline = deadline;
         newProposal.executed = false;
+        newProposal.passed = false;
+        newProposal.yesVotesAmount = 0;
+        newProposal.noVotesAmount = 0;
 
         emit ProposalCreated(
             _projectId,
@@ -131,7 +146,10 @@ contract ProposalGovernance is Ownable {
     }
 
     /**
-     * @dev 投票
+     * @dev 投票，只有捐赠者才能投票，且不能重复投票，如果在投票截止日期之后没有投票视为弃权。
+     * @param _projectId 项目ID
+     * @param _proposalId 提案ID
+     * @param _support 支持还是反对
      */
     function voteOnProposal(
         uint _projectId,
@@ -169,7 +187,10 @@ contract ProposalGovernance is Ownable {
     }
 
     /**
-     * @dev 执行提案
+     * @dev 执行提案，任何人都可以执行，且必须在投票截止日期之后才能执行。
+     * 支持票占总投票比例超过60%的提案才能通过，提案连续失败三次之后该项目失败，捐赠者可以将剩余金额取回。
+     * @param _projectId 项目ID
+     * @param _proposalId 提案ID
      */
     function executeProposal(uint _projectId, uint _proposalId) external {
         Proposal storage proposal = projectProposals[_projectId][_proposalId];
@@ -203,32 +224,5 @@ contract ProposalGovernance is Ownable {
         proposal.executed = true;
 
         emit ProposalExecuted(_projectId, _proposalId, proposal.passed);
-    }
-
-    function getProjectProposals(
-        uint _projectId
-    )
-        external
-        view
-        returns (
-            uint[] memory proposalIds,
-            uint[] memory amounts,
-            uint[] memory deadlines,
-            bool[] memory executedStatus
-        )
-    {
-        Proposal[] storage proposals = projectProposals[_projectId];
-
-        proposalIds = new uint[](proposals.length);
-        amounts = new uint[](proposals.length);
-        deadlines = new uint[](proposals.length);
-        executedStatus = new bool[](proposals.length);
-
-        for (uint i = 0; i < proposals.length; i++) {
-            proposalIds[i] = proposals[i].proposalId;
-            amounts[i] = proposals[i].amount;
-            deadlines[i] = proposals[i].voteDeadline;
-            executedStatus[i] = proposals[i].executed;
-        }
     }
 }

@@ -144,6 +144,9 @@ contract Crowdfunding is Ownable {
     }
 
     // 创建新项目
+    // 参数：项目名称、项目描述、筹款目标金额、截止日期
+    // 返回：无
+    // 任何人都可以调用此函数
     function createProject(
         string memory _name,
         string memory _description,
@@ -185,11 +188,14 @@ contract Crowdfunding is Ownable {
     }
 
     // 向项目捐赠资金
+    // 参数：项目ID
+    // 任何人都可以向某个项目捐赠资金
     function donate(
         uint _projectId
     ) public payable projectExists(_projectId) projectNotCompleted(_projectId) {
         // 检查捐赠金额是否大于0
         require(msg.value > 0, "Donation amount must be greater than 0");
+        // 检查当前时间是否小于项目的截止时间
         require(
             block.timestamp < projects[_projectId].deadline,
             "Project has passed its deadline"
@@ -207,19 +213,22 @@ contract Crowdfunding is Ownable {
         }
 
         // 更新捐赠者金额
-        uint previousAmount = donorAmounts[msg.sender][_projectId];
         donorAmounts[msg.sender][_projectId] += msg.value;
 
         // 触发捐赠事件
         emit DonationMade(
             _projectId,
             msg.sender,
-            previousAmount + msg.value,
+            donorAmounts[msg.sender][_projectId],
             project.currentAmount
         );
     }
 
     // 结束项目
+    // 参数：项目ID、收款人列表、收款金额列表
+    // 只有项目发起人在项目成功的时候才可以调用此函数，因为项目发起人需要在项目成功后给参与者铸造nft作为感谢
+    // 这是需要花费gas的，所以需要项目创始人确认
+    // 如果项目失败了，任何人都可以调用该函数结束项目赎回资金，防止项目创始人恶意不结束项目导致用户资金被锁
     function completeProject(
         uint _projectId,
         address[] memory _recipients,
@@ -249,7 +258,7 @@ contract Crowdfunding is Ownable {
             project.isSuccessful = true;
 
             // 铸造NFT给项目贡献者
-            _mintNFTsForTopDonors(_projectId, _recipients, _amounts);
+            _mintNFTsForDonors(_projectId, _recipients, _amounts);
 
             // 释放启动资金给项目发起人
             project.allowence = (project.totalAmount * 25) / 100;
@@ -263,6 +272,9 @@ contract Crowdfunding is Ownable {
     }
 
     // 提取项目资金（仅限项目发起人）
+    // 参数：项目ID、提取金额
+    // 只有项目发起人可以调用此函数，且提取的金额不能超过allowence的上限
+    // 想要提取更多金额只能发起提案通过后增加allowence的值
     function withdrawFunds(
         uint _projectId,
         uint amount
@@ -295,6 +307,9 @@ contract Crowdfunding is Ownable {
     }
 
     // 退款（仅限未成功的项目）
+    // 参数：项目ID
+    // 只有项目失败时，捐赠者才可以调用此函数，如果项目成功，捐赠者无法调用此函数
+    // 会直接将捐赠者捐助的钱按剩余的钱比例退回
     function refund(
         uint _projectId
     )
@@ -325,12 +340,14 @@ contract Crowdfunding is Ownable {
     /*//////////////////////////////////////////////////////////////
                                 EXTERNAL
     //////////////////////////////////////////////////////////////*/
+    // 增加allowence，只有提案合约的地址才能调用此函数
     function increaseAllowence(uint _projectId, uint _amount) external {
         require(msg.sender == proposalAddress, "Unauthorized");
         projects[_projectId].allowence += _amount;
         emit AllowenceIncreased(_projectId, projects[_projectId].allowence);
     }
 
+    // 设置项目失败，只有提案合约才能调用，在提案连续失败三次之后设置该项目为失败
     function setProjectFailed(uint _projectId) external {
         require(msg.sender == proposalAddress, "Unauthorized");
         Project storage project = projects[_projectId];
@@ -344,16 +361,22 @@ contract Crowdfunding is Ownable {
     //////////////////////////////////////////////////////////////*/
 
     // 铸造NFT给捐赠者
-    function _mintNFTsForTopDonors(
+    // 参数：项目ID、捐赠者地址、捐赠金额
+    // 捐赠者地址和捐赠金额数组长度必须一致
+    // 项目创始人应在调用完成项目的函数时传入捐赠者地址和捐赠金额数组
+    // 捐赠者地址必须要在捐赠记录的名单中，
+    function _mintNFTsForDonors(
         uint _projectId,
         address[] memory donors,
         uint[] memory amounts
     ) internal {
+        require(donors.length == amounts.length, "Invalid input");
         for (uint i = 0; i < donors.length; i++) {
-            // 如果捐赠者地址为零，跳过
-            if (donors[i] == address(0)) {
-                break;
-            }
+            // 验证地址是否存在于捐赠记录中
+            require(
+                donorAmounts[donors[i]][_projectId] > 0,
+                "Address is not a donor"
+            );
 
             // 铸造NFT
             uint tokenId = ICrowdfundingNFT(nftContractAddress).mintNFT(

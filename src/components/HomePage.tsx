@@ -157,7 +157,6 @@ async function fetchMyNFTs(recipient: string): Promise<NFTData[]> {
   }));
 }
 export default function HomePage() {
-  const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
     queryKey: ["projects"],
     queryFn: fetchProjectsFromGraphQL,

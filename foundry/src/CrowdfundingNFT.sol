@@ -93,6 +93,9 @@ contract CrowdfundingNFT is ERC721, Ownable {
     constructor() ERC721("CrowdfundingNFT", "CFNFT") Ownable(msg.sender) {}
 
     // 铸造NFT给指定地址
+    // 参数：接收者地址、项目ID、排名、捐赠金额
+    // 返回：生成的NFT的ID
+    // 只有众筹合约才能调用此函数，在创建合约的时候会把合约的控制权转移给众筹合约，所以只有众筹合约才能调用此函数
     function mintNFT(
         address to,
         uint projectId,

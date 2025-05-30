@@ -43,8 +43,6 @@ export default function CreateProject() {
   }, [formData.duration]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
     if (!address) {
       toast.error("请先连接钱包");
       return;

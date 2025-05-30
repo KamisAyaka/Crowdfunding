@@ -147,6 +147,16 @@ export default function ProposalDetailPage() {
   const { isLoading: isVoteConfirming } = useWaitForTransactionReceipt({
     hash: voteHash,
   });
+  const handleVote = (support: boolean) => {
+    if (!proposal || !address) return;
+
+    voteWrite({
+      address: currentChainContracts.ProposalGovernance as `0x${string}`,
+      abi: ProposalGovernanceAbi,
+      functionName: "voteOnProposal",
+      args: [BigInt(proposal.projectId), BigInt(proposal.proposalId), support],
+    });
+  };
 
   // 执行提案处理
   const {
@@ -158,17 +168,6 @@ export default function ProposalDetailPage() {
   const { isLoading: isExecuteConfirming } = useWaitForTransactionReceipt({
     hash: executeHash,
   });
-
-  const handleVote = (support: boolean) => {
-    if (!proposal || !address) return;
-
-    voteWrite({
-      address: currentChainContracts.ProposalGovernance as `0x${string}`,
-      abi: ProposalGovernanceAbi,
-      functionName: "voteOnProposal",
-      args: [BigInt(proposal.projectId), BigInt(proposal.proposalId), support],
-    });
-  };
 
   const handleExecute = () => {
     if (!proposal) return;
@@ -284,7 +283,7 @@ export default function ProposalDetailPage() {
           {!proposal.executed && (
             <div className="flex flex-col md:flex-row gap-4">
               {/* 修改提案结束的判断时间用于测试 */}
-              {Date.now() + 86400 * 5000 <
+              {Date.now() + 86400 * 2000 <
               Number(proposal.voteDeadline) * 1000 ? (
                 <>
                   <button

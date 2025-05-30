@@ -29,9 +29,9 @@ export default function Header() {
           <FaGithub className="h-5 w-5 text-white" />
         </a>
       </div>
-      <h4 className="italic text-left hidden text-zinc-500 lg:block">
+      <h3 className="italic text-left hidden text-zinc-500 lg:block">
         一个基于区块链的众筹平台项目
-      </h4>
+      </h3>
       <div className="flex items-center gap-4">
         <ConnectButton />
       </div>

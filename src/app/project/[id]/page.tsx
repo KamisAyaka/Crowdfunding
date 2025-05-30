@@ -34,12 +34,80 @@ export interface ProjectInfo {
 
 const GRAPHQL_API_URL = process.env.NEXT_PUBLIC_GRAPHQL_API_URL;
 
+const GET_PROPOSALS = `
+query GetProposals($projectId: String!) {
+  allProposalCreateds(filter: {projectId: {equalTo: $projectId}}, orderBy: [BLOCK_NUMBER_ASC]) {
+    nodes {
+      proposalId
+      voteDeadline
+    }
+  }
+  allProposalExecuteds(filter: {projectId: {equalTo: $projectId}}) {
+    nodes {
+      proposalId
+      passed
+    }
+  }
+}`;
+
+const GET_PROJECT_DETAIL = `
+  query GetProjectById($id: String!) {
+    allProjectCreateds(filter: { id: { equalTo: $id } }) {
+      nodes {
+        id
+        creator
+        name
+        description
+        goal
+        deadline
+        txHash
+      }
+    }
+    allDonationMades(filter: { id: { equalTo: $id } }) {
+      nodes {
+        amount
+        currentAmount
+        donor
+        txHash
+      }
+    }
+    allProjectCompleteds(filter:{ id: { equalTo: $id } }) {
+      nodes {
+        isSuccessful
+      }
+    }
+    allAllowenceIncreaseds(filter: { id: { equalTo: $id } }) {
+      nodes {
+        allowence
+      }
+    }
+    allProjectFaileds(filter: { id: { equalTo: $id } }) {
+      nodes {
+        id
+      }
+    }
+    allFundsWithdrawns(filter: { id: { equalTo: $id } }) {
+      nodes {
+        amount
+      }
+    }
+  }
+`;
+
 export default function ProjectDetailPage() {
   const params = useParams();
   const projectId = params.id as string;
   const { address } = useAccount();
   const chainId = useChainId();
   const currentChainContracts = chainsToContracts[chainId];
+
+  const validateWallet = () => {
+    if (!address) {
+      toast.error("请先连接钱包");
+      return false;
+    }
+    return true;
+  };
 
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -88,15 +156,20 @@ export default function ProjectDetailPage() {
     });
 
   // 取款状态
-  const [withdrawAmount, setWithdrawAmount] = useState("");
-  const [isWithdrawLoading, setIsWithdrawLoading] = useState(false);
-  const [withdrawError, setWithdrawError] = useState<string | null>(null);
-  const [operationHash, setOperationHash] = useState<`0x${string}`>();
+  const {
+    writeContractAsync,
+    isPending: isWithdrawLoading,
+    error: withdrawError,
+    data: operationHash,
+  } = useWriteContract();
 
-  const { isLoading: isWithdrawConfirming, isSuccess: isWithdrawConfirmed } =
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+
+  const { isLoading: isWithdrawing, isSuccess: isWithdrawed } =
     useWaitForTransactionReceipt({
-      hash: operationHash, // 来自提款操作的哈希
+      hash: operationHash,
     });
+
   // 提案状态
   const [proposals, setProposals] = useState<
     Array<{
@@ -108,14 +181,8 @@ export default function ProjectDetailPage() {
   >([]);
   const [showProposals, setShowProposals] = useState(false);
 
-  const { writeContractAsync } = useWriteContract();
   const handleDonate = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!address) {
-      toast.error("请先连接钱包");
-      return;
-    }
+    if (!validateWallet()) return;
 
     if (!donationAmount || Number(donationAmount) <= 0) {
       toast.error("请输入有效捐赠金额");
@@ -138,15 +205,12 @@ export default function ProjectDetailPage() {
   };
 
   const handleCompleteProject = async () => {
-    if (!address || !project) {
-      toast.error("请先连接钱包");
+    if (!validateWallet() || !project) return;
+    // 添加截止时间校验（检测的是现实的时间,在测试的时候可以在Date.now()后面修改时间进行调试）
+    if (Date.now() < Number(project.deadline) * 1000) {
+      toast.error("项目截止时间未到");
       return;
     }
-    // 添加截止时间校验（检测的是现实的时间，因为是模拟区块链的时间，所以不执行截止时间校验）
-    // if (Date.now() < Number(project.deadline) * 1000) {
-    //   toast.error("项目截止时间未到");
-    //   return;
-    // }
 
     try {
       // 直接对捐赠记录排序（按单笔金额降序）
@@ -175,14 +239,9 @@ export default function ProjectDetailPage() {
     operationType: "withdraw" | "refund",
     amount?: string
   ) => {
-    if (!address) {
-      toast.error("请先连接钱包");
-      return;
-    }
+    if (!validateWallet()) return;
 
     try {
-      setIsWithdrawLoading(true);
-
       const config = {
         address: currentChainContracts.Crowdfunding as `0x${string}`,
         abi: CrowdfundingAbi,
@@ -193,19 +252,15 @@ export default function ProjectDetailPage() {
             : [BigInt(projectId)],
       };
 
-      const txHash = await writeContractAsync(config);
+      await writeContractAsync(config);
       toast.success(
         `${operationType === "withdraw" ? "提取" : "退款"}请求已提交`
       );
-      setOperationHash(txHash);
     } catch (err) {
-      setWithdrawError(
-        `${operationType === "withdraw" ? "提取" : "退款"}失败: ${
-          err instanceof Error ? err.message : "未知错误"
-        }`
+      const errorMessage = err instanceof Error ? err.message : "未知错误";
+      toast.error(
+        `${operationType === "withdraw" ? "提取" : "退款"}失败: ${errorMessage}`
       );
-    } finally {
-      setIsWithdrawLoading(false);
     }
   };
 
@@ -224,49 +279,7 @@ export default function ProjectDetailPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          query: `
-              query GetProjectById($id: String!) {
-                allProjectCreateds(filter: { id: { equalTo: $id } }) {
-                  nodes {
-                    id
-                    creator
-                    name
-                    description
-                    goal
-                    deadline
-                    txHash
-                  }
-                }
-                allDonationMades(filter: { id: { equalTo: $id } }) {
-                  nodes {
-                    amount
-                    currentAmount
-                    donor
-                    txHash
-                  }
-                }
-                allProjectCompleteds(filter:{ id: { equalTo: $id } }) {
-                  nodes {
-                    isSuccessful
-                  }
-                }
-                allAllowenceIncreaseds(filter: { id: { equalTo: $id } }) {
-                  nodes {
-                    allowence
-                  }
-                }
-                allProjectFaileds(filter: { id: { equalTo: $id } }) {
-                  nodes {
-                    id
-                  }
-                }
-                allFundsWithdrawns(filter: { id: { equalTo: $id } }) {
-                  nodes {
-                    amount
-                  }
-                }
-              }
-          `,
+          query: GET_PROJECT_DETAIL,
           variables: {
             id: projectId,
           },
@@ -282,7 +295,7 @@ export default function ProjectDetailPage() {
           return acc;
         }, {});
         setDonations(Object.values(uniqueDonations));
-        // 获取最新的currentAmount（取最后一个捐赠记录的currentAmount）
+        // 获取最新的currentAmount
         const latestDonation = donations[donations.length - 1];
         const currentAmount = latestDonation
           ? BigInt(latestDonation.currentAmount)
@@ -291,7 +304,7 @@ export default function ProjectDetailPage() {
         const completedData = result.data.allProjectCompleteds?.nodes[0];
         const isSuccessful = completedData?.isSuccessful || false;
 
-        // 处理allowence更新（取最新值）
+        // 处理allowence更新
         const allowanceEvents =
           result.data?.allAllowenceIncreaseds?.nodes || [];
         var allowance = BigInt(0);
@@ -349,22 +362,6 @@ export default function ProjectDetailPage() {
     }
 
     try {
-      const GET_PROPOSALS = `
-      query GetProposals($projectId: String!) {
-        allProposalCreateds(filter: {projectId: {equalTo: $projectId}}, orderBy: [BLOCK_NUMBER_ASC]) {
-          nodes {
-            proposalId
-            voteDeadline
-          }
-        }
-        allProposalExecuteds(filter: {projectId: {equalTo: $projectId}}) {
-          nodes {
-            proposalId
-            passed
-          }
-        }
-      }`;
-
       const response = await fetch(GRAPHQL_API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -780,7 +777,7 @@ export default function ProjectDetailPage() {
                         project.allowance - project.totalWithdrawn
                       )} ETH`}
                       className="flex-1 p-2 border rounded"
-                      disabled={isWithdrawLoading}
+                      disabled={isWithdrawLoading || isWithdrawing} // 合并 loading 状态
                     />
                     <button
                       onClick={() =>
@@ -789,15 +786,23 @@ export default function ProjectDetailPage() {
                       className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded disabled:opacity-50"
                       disabled={
                         !withdrawAmount ||
-                        isWithdrawLoading ||
+                        isWithdrawLoading || // 签名阶段 loading
+                        isWithdrawing || // 确认阶段 loading
                         Number(withdrawAmount) <= 0
                       }
                     >
-                      {isWithdrawLoading ? "处理中..." : "提取资金"}
+                      {isWithdrawLoading && "签名中..."}
+                      {isWithdrawing && "确认中..."}
+                      {!isWithdrawLoading && !isWithdrawing && "提取资金"}
                     </button>
                   </div>
                   {withdrawError && (
-                    <div className="text-red-500 text-sm">{withdrawError}</div>
+                    <div className="text-red-500 text-sm">
+                      {withdrawError.message} {/* 直接显示错误对象的消息 */}
+                    </div>
+                  )}
+                  {isWithdrawed && (
+                    <div className="text-green-500 text-sm">提款成功！</div>
                   )}
                 </div>
               )}
