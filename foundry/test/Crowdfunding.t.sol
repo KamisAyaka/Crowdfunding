@@ -170,7 +170,7 @@ contract CrowdfundingTest is Test {
         vm.warp(block.timestamp + 8 days); // 增加时间超过截止日期
         address[] memory recipients = new address[](1);
         recipients[0] = donors[1];
-        uint[] memory amount = new uint[](2);
+        uint[] memory amount = new uint[](1);
         amount[0] = 1 ether;
         vm.prank(creator);
         crowdfunding.completeProject(0, recipients, amount);

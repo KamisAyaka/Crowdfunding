@@ -283,8 +283,7 @@ export default function ProposalDetailPage() {
           {!proposal.executed && (
             <div className="flex flex-col md:flex-row gap-4">
               {/* 修改提案结束的判断时间用于测试 */}
-              {Date.now() + 86400 * 2000 <
-              Number(proposal.voteDeadline) * 1000 ? (
+              {Date.now() < Number(proposal.voteDeadline) * 1000 ? (
                 <>
                   <button
                     onClick={() => handleVote(true)}
