@@ -4,7 +4,7 @@ volumes:
 
 services:
   postgresql:
-    image: docker.1ms.run/library/postgres
+    image: postgres:16.3
     shm_size: 1g
     restart: always
     volumes:
